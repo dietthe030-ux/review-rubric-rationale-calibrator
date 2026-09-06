@@ -1,0 +1,9 @@
+AGENTS.md
+CLAUDE.md
+docs/preflight/
+.pytest_cache/
+__pycache__/
+node_modules/
+dist/
+.env*
+!.env.example
