@@ -6,6 +6,7 @@ import type { Provider, Address } from "./wallet";
 export const chain = studionet;
 export const chainHex = `0x${chain.id.toString(16)}`;
 export const explorerUrl = chain.blockExplorers?.default.url;
+export const walletChain = { chainId: chainHex, chainName: chain.name, nativeCurrency: chain.nativeCurrency, rpcUrls: chain.rpcUrls.default.http, blockExplorerUrls: explorerUrl ? [explorerUrl] : undefined };
 const configured = String(import.meta.env.VITE_CONTRACT_ADDRESS ?? "").toLowerCase();
 export const contractAddress = /^0x[0-9a-f]{40}$/.test(configured) ? configured as Address : undefined;
 export const readClient = createClient({ chain });
@@ -15,10 +16,16 @@ export type CaseRecord = {
   base: { dimensions: { id: string; min: number; max: number; anchors: { score: number; text: string }[] }[] };
   response: { reviews?: { dimension_id: string; score: number; rationale: string }[] };
   outcome: string; result: { labels?: string[] }; accepted_attempts: number;
+  last_operation: { method: string; caller: Address; args_hash: string };
 };
 export async function readCase(id: string): Promise<CaseRecord | null> {
   if (!contractAddress) throw new Error("Contract address is not configured.");
   const result = await readClient.readContract({ address: contractAddress, functionName: "get_case", args: [BigInt(id)] });
+  const text = String(result); return text === "null" ? null : JSON.parse(text) as CaseRecord;
+}
+export async function readVersion(id: string, revision: string): Promise<CaseRecord | null> {
+  if (!contractAddress) throw new Error("Contract address is not configured.");
+  const result = await readClient.readContract({ address: contractAddress, functionName: "get_version", args: [BigInt(id), BigInt(revision)] });
   const text = String(result); return text === "null" ? null : JSON.parse(text) as CaseRecord;
 }
 export function writeClient(provider: Provider, account: Address) {
@@ -29,7 +36,10 @@ export function terminal(transaction: unknown): boolean {
 }
 export function assertSuccessful(transaction: unknown) {
   if (!terminal(transaction)) throw new Error("Transaction is not finalized.");
-  if (String((transaction as { txExecutionResultName?: unknown }).txExecutionResultName) !== ExecutionResult.FINISHED_WITH_RETURN) {
+  const detail = transaction as { txExecutionResultName?: unknown; consensus_data?: { leader_receipt?: { execution_result?: unknown; result?: { status?: unknown } } } };
+  const leader = detail.consensus_data?.leader_receipt;
+  const successful = String(detail.txExecutionResultName) === ExecutionResult.FINISHED_WITH_RETURN || (leader?.execution_result === "SUCCESS" && leader.result?.status === "return");
+  if (!successful) {
     throw new Error("The finalized transaction did not execute successfully.");
   }
 }

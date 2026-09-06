@@ -5,6 +5,7 @@ import { removeUnsigned, reserve, updateRecord, type JournalRecord } from "./jou
 export type Phase = "IDLE" | "WAITING_FOR_WALLET" | "SUBMITTED" | "WAITING_FOR_FINALITY" | "VERIFYING_EXECUTION" | "VERIFYING_READBACK" | "SUCCESS" | "REJECTED" | "FAILED" | "RECONCILIATION_REQUIRED";
 export type Progress = { phase: Phase; hash?: string; message?: string };
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+export const transportJson = (value: unknown) => JSON.stringify(value, (_key, item) => typeof item === "bigint" ? item.toString() : item);
 function rejected(cause: unknown) { return !!cause && typeof cause === "object" && Number((cause as { code?: unknown }).code) === 4001; }
 export async function executeWrite(input: {
   chain: string; contract: Address; account: Address; method: string; intent: string; args: unknown[];
@@ -12,7 +13,7 @@ export async function executeWrite(input: {
   verify: (record: JournalRecord) => Promise<void>; progress: (value: Progress) => void;
 }) {
   const record = await reserve({ chain: input.chain, contract: input.contract, account: input.account, method: input.method,
-    intent: input.intent, args_json: JSON.stringify(input.args), pre_revision: input.preRevision, pre_hash: input.preHash });
+    intent: input.intent, args_json: transportJson(input.args), pre_revision: input.preRevision, pre_hash: input.preHash });
   input.progress({ phase: "WAITING_FOR_WALLET" });
   let hash: string;
   try {

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { deduped, rpcMetrics } from "../src/rpc";
 import { loadJournal, reserve, updateRecord } from "../src/journal";
 import { assertSuccessful, terminal } from "../src/contract";
+import { transportJson } from "../src/transaction";
 
 class StorageMock {
   data = new Map<string, string>();
@@ -56,5 +57,10 @@ describe("transaction classifier", () => {
     expect(terminal({ statusName: "ACCEPTED" })).toBe(false);
     expect(() => assertSuccessful({ statusName: "FINALIZED", txExecutionResultName: "FINISHED_WITH_ERROR" })).toThrow(/did not execute/i);
     expect(() => assertSuccessful({ statusName: "ACCEPTED", txExecutionResultName: "FINISHED_WITH_RETURN" })).toThrow(/not finalized/i);
+    expect(() => assertSuccessful({ statusName: "FINALIZED", consensus_data: { leader_receipt: { execution_result: "SUCCESS", result: { status: "return" } } } })).not.toThrow();
   });
+});
+
+it("serializes bigint calldata as canonical decimal transport values", () => {
+  expect(transportJson([1n, "x"])).toBe('["1","x"]');
 });

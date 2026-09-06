@@ -106,15 +106,19 @@ export const wallet = {
   snapshot: () => state,
   subscribe(fn: () => void) { stateListeners.add(fn); return () => stateListeners.delete(fn); },
   providers(value: readonly WalletOption[]) { update({ ...state, providers: value }); },
-  open() { update({ phase: "CHOOSER_OPEN", providers: state.providers }); },
+  open() { update({ phase: "DISCOVERING", providers: state.providers }); queueMicrotask(() => update({ phase: "CHOOSER_OPEN", providers: state.providers })); },
   close() { if (state.phase === "CHOOSER_OPEN") update({ phase: "DISCONNECTED", providers: state.providers }); },
   disconnect() { detach?.(); detach = undefined; update({ phase: "DISCONNECTED", providers: state.providers }); },
-  async switchNetwork(chainHex: string) {
+  async switchNetwork(configuration: { chainId: string; chainName: string; nativeCurrency: unknown; rpcUrls: readonly string[]; blockExplorerUrls?: readonly string[] }) {
     if (!state.selected) return;
     try {
-      await state.selected.provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: chainHex }] });
+      await state.selected.provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: configuration.chainId }] });
       update({ ...state, phase: "CONNECTED", error: undefined });
     } catch (cause) {
+      if (cause && typeof cause === "object" && Number((cause as { code?: unknown }).code) === 4902) {
+        try { await state.selected.provider.request({ method: "wallet_addEthereumChain", params: [configuration] }); await state.selected.provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: configuration.chainId }] }); update({ ...state, phase: "CONNECTED", error: undefined }); return; }
+        catch (addCause) { cause = addCause; }
+      }
       update({ ...state, phase: "WRONG_CHAIN", error: cause instanceof Error ? cause.message : "Network switch failed." });
     }
   },
