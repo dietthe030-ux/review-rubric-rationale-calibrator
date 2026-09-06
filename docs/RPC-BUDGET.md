@@ -1,6 +1,6 @@
 # RPC Budgets
 
-Studio and frontend RPC accounting are separate. This file defines the frontend plan only; the Studio capability probe and Studio matrix are created at PRE_DEPLOY.
+Studio and frontend RPC accounting are separate. Both plans are locked before PRE_DEPLOY review; Studio evidence will be recorded separately after approval.
 
 ## FRONTEND RPC BUDGET MATRIX
 
@@ -24,6 +24,30 @@ Global controls: one shared client per chain/contract; normalized in-flight read
 
 ## STUDIO RPC BUDGET
 
-STATUS: DEFERRED_TO_PRE_DEPLOY
+STUDIO_CAPABILITY_PROBE_STATUS: COMPLETE
+STUDIO_MEASUREMENT_MODE: OBSERVABLE_ACTION_LEDGER
+STUDIO_MEASUREMENT_TIMING: PRE_E2E
+STUDIO_CAPABILITY_PROBE_AT: 2026-09-07T03:44:50+07:00
+STUDIO_CAPABILITY_TOOL_OR_API: Codex in-app Browser control surface (`cua.getState`, browser-tab accessibility state, and primary-AI action log)
+STUDIO_CAPABILITY_CHECK: Before any Studio source load, deploy, signature, contract write, or E2E action, enumerate browser surfaces and inspect the Studio tab control surface for network/performance/request-log telemetry.
+STUDIO_CAPABILITY_RESULT: Physical network-request events and totals are not exposed. Every primary-AI browser action, transaction submission, existing hash, bounded status poll, terminal receipt read, authoritative readback, retry, and duplicate-transaction decision is observable and can be entered into an action ledger.
+STUDIO_PHYSICAL_COUNT_CLAIM: NONE
+STUDIO_ACTION_LEDGER_STATUS: READY
 
-Before Studio opens, probe whether physical request totals are observable. Lock either measured-count mode or observable-action-ledger mode, then define the separate Studio matrix for deploy and the approved positive, negative, no-write, and retry scenarios. No frontend count may substitute for Studio evidence.
+Target environment: stable hosted Studionet at `https://studio.genlayer.com`, chain ID `61999`. The read-only account-selector check found the currently active accessible deployer `0xeF5D2119416A2f5afa35dCFA209766EFC1BE5902`, displaying `998 GEN`. This selection is Task-local and does not authorize a transaction before PRE_DEPLOY approval.
+
+## STUDIO RPC BUDGET MATRIX
+
+Every row is an observable-action ceiling, not a physical-request claim. One transaction submission is followed by at most three status polls at bounded intervals, one terminal receipt read, and one authoritative readback. Stop immediately on terminal error, quota/rate-limit cooldown, or an actual blocker. Reuse existing hashes; never redeploy or resubmit to obtain measurement.
+
+| Scenario | Observable setup/read actions | Transaction submissions | Max status polls | Terminal receipt reads | Authoritative readbacks | Retry/duplicate rule | Terminal evidence |
+|---|---:|---:|---:|---:|---:|---|---|
+| Network, account, exact-source envelope and schema | 4 | 0 | 0 | 0 | 0 | one source load/probe only | Studionet 61999, selected account, exact source hash, constructor and 14-method schema inventory |
+| Exact-source deployment | 1 | 1 | 3 | 1 | 1 | no redeploy; preserve hash on interruption | contract address, `FINALIZED`, semantic `SUCCESS`, consensus/finality, deployed-source parity |
+| Case A positive lifecycle: create, replace, lock, put, freeze, calibrate | 0 | 6 | 18 | 6 | 6 | no automatic retry; each next write waits for prior readback | exact revisions 1–6 and terminal non-ambiguous outcome |
+| Case B retry lifecycle: create, lock, put, freeze, calibrate to agreed ambiguity, then retry after on-chain cooldown | 0 | 6 | 18 | 6 | 6 | retry only if authoritative phase is `UNRESOLVED` and timestamp gate is open | exact revisions 1–6; retry result or honest model-dependent inability to enter retry state |
+| Negative/no-write controls: wrong authority and stale revision | 2 | 2 | 6 | 2 | 2 | never repeat a rejected control | finalized execution error and exact unchanged authoritative version/state |
+| Diagnostic reserve | 2 | 0 | 2 | 1 | 2 | only for an evidenced ambiguous hash/receipt/readback; no new transaction | classified existing transaction and reconciled state |
+| **Maximum planned total** | **9** | **15** | **47** | **16** | **17** | **0 blind retries; 0 duplicate transactions** | complete action ledger with explained variance |
+
+The retry branch is consensus-output dependent. It may execute only from an actually read-back `UNRESOLVED` state; a terminal non-ambiguous result must not be relabeled, replayed, or replaced merely to force the branch. Any inability to obtain a genuine agreed ambiguity is reported as a matrix variance for checkpoint review, never hidden or fabricated.
