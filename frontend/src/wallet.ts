@@ -60,16 +60,21 @@ function publish() {
   providerSnapshot = Object.freeze(catalog.flatMap(({ id }) => options.get(id) ? [options.get(id)!] : []));
   providerListeners.forEach((listener) => listener());
 }
-function accept(id: WalletId, provider: Provider, uuid: string, legacy = false) {
-  const knownUuid = uuids.get(uuid);
-  const knownIdentity = identities.get(provider as object);
-  const current = options.get(id);
+function acceptInto(target: Map<WalletId, WalletOption>, seenUuids: Map<string, Provider>, seenIdentities: WeakMap<object, WalletId>, id: WalletId, provider: Provider, uuid: string, legacy = false) {
+  const knownUuid = seenUuids.get(uuid);
+  const knownIdentity = seenIdentities.get(provider as object);
+  const current = target.get(id);
   if ((knownUuid && knownUuid !== provider) || (knownIdentity && knownIdentity !== id) || (current && current.provider !== provider && !current.legacy)) return;
-  const replacingSelected = current && current.provider !== provider && current.legacy && state.selected?.id === id && state.selected.provider === current.provider;
   const item = catalog.find((entry) => entry.id === id)!;
-  uuids.set(uuid, provider);
-  identities.set(provider as object, id);
-  options.set(id, { id, name: item.name, provider, uuid, legacy });
+  seenUuids.set(uuid, provider);
+  seenIdentities.set(provider as object, id);
+  target.set(id, { id, name: item.name, provider, uuid, legacy });
+  return current;
+}
+function accept(id: WalletId, provider: Provider, uuid: string, legacy = false) {
+  const current = acceptInto(options, uuids, identities, id, provider, uuid, legacy);
+  if (!current && !options.has(id)) return;
+  const replacingSelected = current && current.provider !== provider && current.legacy && state.selected?.id === id && state.selected.provider === current.provider;
   publish();
   if (replacingSelected) { detach?.(); detach = undefined; update({ phase: "DISCONNECTED", providers: providerSnapshot }); }
 }
@@ -95,6 +100,22 @@ export function startDiscovery() {
 }
 export function providerOptions() { return providerSnapshot; }
 export function providerCardinality(options: readonly WalletOption[] = providerSnapshot) { return options.length; }
+export type ProviderAnnouncement = { provider: Provider; uuid: string; rdns: string };
+export function resolveProviderOptions(legacyCandidates: readonly Provider[], announcements: readonly ProviderAnnouncement[] = []) {
+  const resolved = new Map<WalletId, WalletOption>();
+  const seenUuids = new Map<string, Provider>();
+  const seenIdentities = new WeakMap<object, WalletId>();
+  for (const provider of legacyCandidates) {
+    const id = identity(provider);
+    if (id) acceptInto(resolved, seenUuids, seenIdentities, id, provider, `legacy-${id}`, true);
+  }
+  for (const announcement of announcements) {
+    const item = catalog.find(({ rdns }) => rdns.includes(announcement.rdns.toLowerCase() as never));
+    const advertisesIdentity = announcement.provider.isMetaMask === true || announcement.provider.isOkxWallet === true || announcement.provider.isOKExWallet === true || announcement.provider.isRabby === true;
+    if (item && (!advertisesIdentity || identity(announcement.provider) === item.id)) acceptInto(resolved, seenUuids, seenIdentities, item.id, announcement.provider, announcement.uuid);
+  }
+  return Object.freeze(catalog.flatMap(({ id }) => resolved.get(id) ? [resolved.get(id)!] : []));
+}
 export function useProviders() {
   startDiscovery();
   return useSyncExternalStore((fn) => { providerListeners.add(fn); return () => providerListeners.delete(fn); }, () => providerSnapshot, () => []);
@@ -148,17 +169,19 @@ export const wallet = {
     try {
       await selected.provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: configuration.chainId }] });
       const active = account(await selected.provider.request({ method: "eth_accounts" }));
+      if (!active) { wallet.disconnect(); return; }
       bind(selected, configuration.chainId);
-      update({ ...state, selected, account: active, phase: active ? "CONNECTED" : "WRONG_CHAIN", writeClient: active ? makeWriteClient(selected.provider, active) : undefined, error: active ? undefined : "The wallet has no active account." });
+      update({ ...state, selected, account: active, phase: "CONNECTED", writeClient: makeWriteClient(selected.provider, active), error: undefined });
     } catch (cause) {
       if (cause && typeof cause === "object" && Number((cause as { code?: unknown }).code) === 4902) {
-        try { await selected.provider.request({ method: "wallet_addEthereumChain", params: [configuration] }); await selected.provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: configuration.chainId }] }); const active = account(await selected.provider.request({ method: "eth_accounts" })); bind(selected, configuration.chainId); update({ ...state, selected, account: active, phase: active ? "CONNECTED" : "WRONG_CHAIN", writeClient: active ? makeWriteClient(selected.provider, active) : undefined, error: active ? undefined : "The wallet has no active account." }); return; }
+        try { await selected.provider.request({ method: "wallet_addEthereumChain", params: [configuration] }); await selected.provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: configuration.chainId }] }); const active = account(await selected.provider.request({ method: "eth_accounts" })); if (!active) { wallet.disconnect(); return; } bind(selected, configuration.chainId); update({ ...state, selected, account: active, phase: "CONNECTED", writeClient: makeWriteClient(selected.provider, active), error: undefined }); return; }
         catch (addCause) { cause = addCause; }
       }
       update({ ...state, phase: "WRONG_CHAIN", writeClient: undefined, error: cause instanceof Error ? cause.message : "Network switch failed." });
     }
   },
   async connect(selected: WalletOption, chainHex: string) {
+    detach?.(); detach = undefined;
     update({ phase: "CONNECTING", providers: state.providers, selected });
     try {
       const active = account(await selected.provider.request({ method: "eth_requestAccounts" }));

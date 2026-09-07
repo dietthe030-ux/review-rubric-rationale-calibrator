@@ -35,7 +35,7 @@ function normalizedArgs(method: string, args: unknown[]) {
 type DimensionDraft = { id: string; min: number; max: number; anchors: Record<number, string> };
 const initialDimensions: DimensionDraft[] = [{ id: "clarity", min: 0, max: 2, anchors: { 0: "Unclear", 1: "Partly clear", 2: "Clear and specific" } }];
 
-export function WalletAction({ phase, name, account, onDisconnect, onSwitch, onConnect }: { phase: ReturnType<typeof walletHeaderAction> extends infer T ? T : never; name?: string; account?: string; onDisconnect: () => void; onSwitch: () => void; onConnect: () => void }) {
+export function WalletAction({ phase, name, account, onDisconnect, onSwitch, onConnect }: { phase: "CONNECTED" | "WRONG_CHAIN" | "CONNECT"; name?: string; account?: string; onDisconnect: () => void; onSwitch: () => void; onConnect: () => void }) {
   if (phase === "CONNECTED") return <button className="wallet-button connected" onClick={onDisconnect} title={`Connected as ${account}`}><span className="wallet-name-badge">{name}</span><span className="account-address">{account?.slice(0, 6)}…{account?.slice(-4)}</span><span className="disconnect-affordance">Disconnect</span></button>;
   if (phase === "WRONG_CHAIN") return <button className="wallet-button warning" onClick={onSwitch}>Switch network</button>;
   return <button className="wallet-button primary" onClick={onConnect}>Connect wallet</button>;

@@ -3,7 +3,7 @@ import { deduped, rpcMetrics } from "../src/rpc";
 import { loadJournal, reserve, updateRecord } from "../src/journal";
 import { assertSuccessful, readClient, terminal } from "../src/contract";
 import { createConcurrencyGate, executeWrite, transportJson, type Progress } from "../src/transaction";
-import { providerCardinality, providerOptions, startDiscovery, wallet, walletHeaderAction, type Provider, type WalletOption } from "../src/wallet";
+import { providerCardinality, providerOptions, resolveProviderOptions, startDiscovery, wallet, walletHeaderAction, type Provider, type WalletOption } from "../src/wallet";
 import { WalletAction } from "../src/App";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -47,6 +47,7 @@ class ProviderMock implements Provider {
 }
 
 it("discovers exact unique providers, rejects ambiguity, and replaces legacy identity late", async () => {
+  expect(providerOptions()).toHaveLength(0);
   const legacy = new ProviderMock(); Object.assign(legacy, { isMetaMask: true });
   const events = new Map<string, ((event: unknown) => void)[]>();
   const fakeWindow = {
@@ -74,7 +75,9 @@ it("discovers exact unique providers, rejects ambiguity, and replaces legacy ide
   const okx = new ProviderMock(); Object.assign(okx, { isOkxWallet: true });
   const rabby = new ProviderMock(); Object.assign(rabby, { isRabby: true });
   fakeWindow.dispatchEvent({ type: "eip6963:announceProvider", detail: { info: { uuid: "okx", rdns: "com.okx.wallet" }, provider: okx } });
+  expect(providerOptions()).toHaveLength(2);
   fakeWindow.dispatchEvent({ type: "eip6963:announceProvider", detail: { info: { uuid: "rabby", rdns: "io.rabby" }, provider: rabby } });
+  expect(providerOptions()).toHaveLength(3);
   expect(providerOptions().map(({ id, provider, legacy: isLegacy }) => ({ id, provider, legacy: isLegacy }))).toEqual([
     { id: "metamask", provider: modern, legacy: false }, { id: "okx", provider: okx, legacy: false }, { id: "rabby", provider: rabby, legacy: false },
   ]);
@@ -87,17 +90,17 @@ it("keeps the rendered wallet action invariant explicit", () => {
 });
 
 it("covers zero, single, every two-wallet combination, and all provider cardinalities", () => {
-  const option = (id: WalletOption["id"]): WalletOption => ({ id, name: id === "metamask" ? "MetaMask" : id === "okx" ? "OKX Wallet" : "Rabby", provider: new ProviderMock(), uuid: id });
+  const option = (id: WalletOption["id"]): WalletOption => ({ id, name: id === "metamask" ? "MetaMask" : id === "okx" ? "OKX Wallet" : "Rabby", provider: Object.assign(new ProviderMock(), id === "metamask" ? { isMetaMask: true } : id === "okx" ? { isOkxWallet: true } : { isRabby: true }), uuid: id });
   const all = [option("metamask"), option("okx"), option("rabby")];
-  expect(providerCardinality([])).toBe(0);
-  expect(providerCardinality([all[0]])).toBe(1);
-  expect(providerCardinality([all[0], all[1]])).toBe(2);
-  expect(providerCardinality(all)).toBe(3);
-  expect([
-    ["metamask", "okx"], ["metamask", "rabby"], ["okx", "rabby"],
-  ]).toEqual([
-    all.slice(0, 2).map(({ id }) => id), [all[0], all[2]].map(({ id }) => id), all.slice(1).map(({ id }) => id),
-  ]);
+  const providers = all.map(({ provider }) => provider);
+  expect(providerCardinality(resolveProviderOptions([]))).toBe(0);
+  expect(providerCardinality(resolveProviderOptions([providers[0]]))).toBe(1);
+  expect(providerCardinality(resolveProviderOptions([providers[0], providers[1]]))).toBe(2);
+  expect(providerCardinality(resolveProviderOptions(providers))).toBe(3);
+  expect(resolveProviderOptions([providers[0], providers[1]]).map(({ id }) => id)).toEqual(["metamask", "okx"]);
+  expect(resolveProviderOptions([providers[0], providers[2]]).map(({ id }) => id)).toEqual(["metamask", "rabby"]);
+  expect(resolveProviderOptions([providers[1], providers[2]]).map(({ id }) => id)).toEqual(["okx", "rabby"]);
+  expect(resolveProviderOptions(providers).every(({ provider }) => typeof provider.request === "function")).toBe(true);
 });
 
 it("renders exactly one wallet action and never Connect wallet while connected", () => {
@@ -165,6 +168,31 @@ it("rejects connection, removes invalid accounts, cleans listeners, and reconnec
   expect(provider.count("accountsChanged")).toBe(1);
   wallet.disconnect();
   expect(provider.count("accountsChanged")).toBe(0);
+});
+
+it("disconnects when network recovery returns no active account", async () => {
+  const provider = new ProviderMock();
+  const selected: WalletOption = { id: "metamask", name: "MetaMask", provider, uuid: "empty-after-switch" };
+  await wallet.connect(selected, "0xf22f");
+  expect(wallet.snapshot().phase).toBe("WRONG_CHAIN");
+  provider.account = "";
+  await wallet.switchNetwork({ chainId: "0xf22f", chainName: "Studionet", nativeCurrency: {}, rpcUrls: [] });
+  expect(wallet.snapshot().phase).toBe("DISCONNECTED");
+  expect(wallet.snapshot().writeClient).toBeUndefined();
+  expect(provider.count("accountsChanged")).toBe(0);
+});
+
+it("detaches the old provider before a failed replacement connection", async () => {
+  const oldProvider = new ProviderMock(); oldProvider.chain = "0xf22f";
+  const nextProvider = new ProviderMock(); nextProvider.rejectConnect = true;
+  await wallet.connect({ id: "metamask", name: "MetaMask", provider: oldProvider, uuid: "old" }, "0xf22f");
+  expect(oldProvider.count("accountsChanged")).toBe(1);
+  await wallet.connect({ id: "rabby", name: "Rabby", provider: nextProvider, uuid: "next" }, "0xf22f");
+  expect(wallet.snapshot().phase).toBe("ERROR");
+  expect(oldProvider.count("accountsChanged")).toBe(0);
+  oldProvider.emit("accountsChanged", [`0x${"9".repeat(40)}`]);
+  expect(wallet.snapshot().phase).toBe("ERROR");
+  expect(wallet.snapshot().writeClient).toBeUndefined();
 });
 
 it("deduplicates identical in-flight RPC reads", async () => {
