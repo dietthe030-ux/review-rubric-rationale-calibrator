@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { assertSuccessful, contractAddress, chain, chainHex, explorerUrl, readCase, readClient, readVersion, terminal, walletChain, writeClient, type CaseRecord } from "./contract";
 import { loadJournal, updateRecord, type JournalRecord } from "./journal";
 import { deduped } from "./rpc";
-import { executeWrite, type Progress } from "./transaction";
+import { createConcurrencyGate, executeWrite, type Progress } from "./transaction";
 import { useProviders, useWallet, wallet, type WalletOption } from "./wallet";
 
 const blank: Progress = { phase: "IDLE" };
@@ -108,18 +108,37 @@ export function App() {
   const [progress, setProgress] = useState(blank);
   const [error, setError] = useState(initialJournal.error);
   const [journal, setJournal] = useState<JournalRecord[]>(initialJournal.records);
+  const [visible, setVisible] = useState(document.visibilityState !== "hidden");
   const dialog = useRef<HTMLDialogElement>(null);
+  const operation = useRef(new AbortController());
+  const reconciliations = useRef(createConcurrencyGate(2));
 
   useEffect(() => wallet.providers(providers), [providers]);
   useEffect(() => {
     session.phase === "CHOOSER_OPEN" ? dialog.current?.showModal() : dialog.current?.close();
   }, [session.phase]);
+  useLayoutEffect(() => {
+    operation.current.abort();
+    operation.current = new AbortController();
+    if (!visible || session.phase !== "CONNECTED") operation.current.abort();
+    return () => operation.current.abort();
+  }, [visible, session.phase, session.account, session.selected]);
+  useEffect(() => {
+    const change = () => {
+      const next = document.visibilityState !== "hidden";
+      setVisible(next);
+      if (!next) operation.current.abort();
+    };
+    document.addEventListener("visibilitychange", change);
+    return () => { document.removeEventListener("visibilitychange", change); operation.current.abort(); };
+  }, []);
 
   const connected = session.phase === "CONNECTED" && session.account && session.selected;
   const canWrite = Boolean(
     connected &&
       contractAddress &&
       navigator.locks &&
+      visible &&
       !initialJournal.error &&
       !["WAITING_FOR_WALLET", "SUBMITTED", "WAITING_FOR_FINALITY", "VERIFYING_EXECUTION", "VERIFYING_READBACK"].includes(progress.phase)
   );
@@ -209,6 +228,7 @@ export function App() {
           setCaseId(next.id);
           showRecord(next);
         },
+        signal: operation.current.signal,
       });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Write failed.");
@@ -220,14 +240,20 @@ export function App() {
   }
 
   async function reconcile(item: JournalRecord) {
+    const leave = reconciliations.current.tryEnter();
+    if (!leave) { setError("At most two journal reconciliations can run at once."); return; }
+    const signal = operation.current.signal;
     if (!item.tx_hash) {
       setError("No transaction hash is available. Check wallet history; this attempt cannot be resubmitted automatically.");
+      leave();
       return;
     }
     setProgress({ phase: "VERIFYING_EXECUTION", hash: item.tx_hash });
     setError("");
     try {
+      signal.throwIfAborted();
       const transaction = await readClient.getTransaction({ hash: item.tx_hash as never });
+      signal.throwIfAborted();
       if (!terminal(transaction)) {
         setProgress({ phase: "RECONCILIATION_REQUIRED", hash: item.tx_hash, message: "The exact transaction is not finalized yet." });
         return;
@@ -241,6 +267,7 @@ export function App() {
           : item.intent.split(":")[1];
       const revision = item.method === "create_rubric" ? "1" : String(BigInt(item.pre_revision) + 1n);
       const next = await readVersion(id, revision);
+      signal.throwIfAborted();
       if (!next || next.last_operation.method !== item.method || next.last_operation.caller !== item.account || next.last_operation.args_hash !== (await hashText(canonical(normalizedArgs(item.method, args)))))
         throw new Error("Authoritative historical readback mismatch.");
       await updateRecord(item.reservation, { status: "VERIFIED" });
@@ -249,9 +276,10 @@ export function App() {
       setProgress({ phase: "SUCCESS", hash: item.tx_hash });
       setJournal(loadJournal());
     } catch (cause) {
+      await updateRecord(item.reservation, { status: "RECONCILE" });
       setProgress({ phase: "RECONCILIATION_REQUIRED", hash: item.tx_hash });
-      setError(cause instanceof Error ? cause.message : "Reconciliation failed.");
-    }
+      if (!(cause instanceof DOMException && cause.name === "AbortError")) setError(cause instanceof Error ? cause.message : "Reconciliation failed.");
+    } finally { leave(); }
   }
 
   function create() {

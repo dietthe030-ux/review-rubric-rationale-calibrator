@@ -102,6 +102,25 @@ function account(value: unknown): Address | undefined {
   const text = Array.isArray(value) ? String(value[0] ?? "") : String(value ?? "");
   return /^0x[0-9a-fA-F]{40}$/.test(text) ? text.toLowerCase() as Address : undefined;
 }
+function bind(selected: WalletOption, chainHex: string) {
+  detach?.();
+  const onAccounts = (value: unknown) => {
+    const next = account(value);
+    next ? update({ ...state, account: next }) : wallet.disconnect();
+  };
+  const onChain = (value: unknown) => String(value).toLowerCase() === chainHex.toLowerCase()
+    ? update({ ...state, phase: "CONNECTED", error: undefined })
+    : update({ ...state, phase: "WRONG_CHAIN", error: "Switch to the configured GenLayer network." });
+  const onDisconnect = () => wallet.disconnect();
+  selected.provider.on?.("accountsChanged", onAccounts);
+  selected.provider.on?.("chainChanged", onChain);
+  selected.provider.on?.("disconnect", onDisconnect);
+  detach = () => {
+    selected.provider.removeListener?.("accountsChanged", onAccounts);
+    selected.provider.removeListener?.("chainChanged", onChain);
+    selected.provider.removeListener?.("disconnect", onDisconnect);
+  };
+}
 export const wallet = {
   snapshot: () => state,
   subscribe(fn: () => void) { stateListeners.add(fn); return () => stateListeners.delete(fn); },
@@ -113,10 +132,11 @@ export const wallet = {
     if (!state.selected) return;
     try {
       await state.selected.provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: configuration.chainId }] });
+      bind(state.selected, configuration.chainId);
       update({ ...state, phase: "CONNECTED", error: undefined });
     } catch (cause) {
       if (cause && typeof cause === "object" && Number((cause as { code?: unknown }).code) === 4902) {
-        try { await state.selected.provider.request({ method: "wallet_addEthereumChain", params: [configuration] }); await state.selected.provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: configuration.chainId }] }); update({ ...state, phase: "CONNECTED", error: undefined }); return; }
+        try { await state.selected.provider.request({ method: "wallet_addEthereumChain", params: [configuration] }); await state.selected.provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: configuration.chainId }] }); bind(state.selected, configuration.chainId); update({ ...state, phase: "CONNECTED", error: undefined }); return; }
         catch (addCause) { cause = addCause; }
       }
       update({ ...state, phase: "WRONG_CHAIN", error: cause instanceof Error ? cause.message : "Network switch failed." });
@@ -132,22 +152,7 @@ export const wallet = {
         update({ phase: "WRONG_CHAIN", providers: state.providers, selected, account: active, error: "Switch to the configured GenLayer network." });
         return;
       }
-      const onAccounts = (value: unknown) => {
-        const next = account(value);
-        next ? update({ ...state, phase: "CONNECTED", account: next, error: undefined }) : wallet.disconnect();
-      };
-      const onChain = (value: unknown) => String(value).toLowerCase() === chainHex.toLowerCase()
-        ? update({ ...state, phase: "CONNECTED", error: undefined })
-        : update({ ...state, phase: "WRONG_CHAIN", error: "Switch to the configured GenLayer network." });
-      const onDisconnect = () => wallet.disconnect();
-      selected.provider.on?.("accountsChanged", onAccounts);
-      selected.provider.on?.("chainChanged", onChain);
-      selected.provider.on?.("disconnect", onDisconnect);
-      detach = () => {
-        selected.provider.removeListener?.("accountsChanged", onAccounts);
-        selected.provider.removeListener?.("chainChanged", onChain);
-        selected.provider.removeListener?.("disconnect", onDisconnect);
-      };
+      bind(selected, chainHex);
       update({ phase: "CONNECTED", providers: state.providers, selected, account: active });
     } catch (cause) {
       update({ phase: "ERROR", providers: state.providers, error: cause instanceof Error ? cause.message : "Wallet connection failed." });

@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { deduped, rpcMetrics } from "../src/rpc";
 import { loadJournal, reserve, updateRecord } from "../src/journal";
-import { assertSuccessful, terminal } from "../src/contract";
-import { transportJson } from "../src/transaction";
+import { assertSuccessful, readClient, terminal } from "../src/contract";
+import { createConcurrencyGate, executeWrite, transportJson, type Progress } from "../src/transaction";
+import { wallet, type Provider, type WalletOption } from "../src/wallet";
 
 class StorageMock {
   data = new Map<string, string>();
@@ -14,9 +15,54 @@ class StorageMock {
 }
 
 beforeEach(() => {
+  wallet.disconnect();
   Object.defineProperty(globalThis, "localStorage", { configurable: true, value: new StorageMock() });
   Object.defineProperty(globalThis, "navigator", { configurable: true, value: { locks: { request: async (_name: string, callback: () => unknown) => callback() } } });
   Object.defineProperty(globalThis, "crypto", { configurable: true, value: { getRandomValues: (bytes: Uint8Array) => { bytes.fill(7); return bytes; } } });
+});
+
+class ProviderMock implements Provider {
+  listeners = new Map<string, Set<(...args: unknown[]) => void>>();
+  chain = "0x1";
+  account = `0x${"2".repeat(40)}`;
+  async request({ method }: { method: string }) {
+    if (method === "eth_requestAccounts") return [this.account];
+    if (method === "eth_chainId") return this.chain;
+    if (method === "wallet_switchEthereumChain") { this.chain = "0xf22f"; return null; }
+    return null;
+  }
+  on(event: string, listener: (...args: unknown[]) => void) {
+    const listeners = this.listeners.get(event) ?? new Set();
+    listeners.add(listener); this.listeners.set(event, listeners);
+  }
+  removeListener(event: string, listener: (...args: unknown[]) => void) { this.listeners.get(event)?.delete(listener); }
+  emit(event: string, value?: unknown) { this.listeners.get(event)?.forEach((listener) => listener(value)); }
+  count(event: string) { return this.listeners.get(event)?.size ?? 0; }
+}
+
+it("binds and synchronizes the selected provider after wrong-chain switching", async () => {
+  const provider = new ProviderMock();
+  const selected: WalletOption = { id: "metamask", name: "MetaMask", provider, uuid: "test" };
+  await wallet.connect(selected, "0xf22f");
+  expect(wallet.snapshot().phase).toBe("WRONG_CHAIN");
+  expect(provider.count("accountsChanged")).toBe(0);
+
+  await wallet.switchNetwork({ chainId: "0xf22f", chainName: "Studionet", nativeCurrency: {}, rpcUrls: [] });
+  expect(wallet.snapshot()).toMatchObject({ phase: "CONNECTED", account: provider.account, selected });
+  expect(["accountsChanged", "chainChanged", "disconnect"].map((event) => provider.count(event))).toEqual([1, 1, 1]);
+
+  const nextAccount = `0x${"3".repeat(40)}`;
+  provider.emit("accountsChanged", [nextAccount]);
+  expect(wallet.snapshot()).toMatchObject({ phase: "CONNECTED", account: nextAccount, selected });
+  provider.emit("chainChanged", "0x1");
+  expect(wallet.snapshot().phase).toBe("WRONG_CHAIN");
+  provider.emit("accountsChanged", [provider.account]);
+  expect(wallet.snapshot().phase).toBe("WRONG_CHAIN");
+  provider.emit("chainChanged", "0xf22f");
+  expect(wallet.snapshot().phase).toBe("CONNECTED");
+  provider.emit("disconnect");
+  expect(wallet.snapshot().phase).toBe("DISCONNECTED");
+  expect(["accountsChanged", "chainChanged", "disconnect"].map((event) => provider.count(event))).toEqual([0, 0, 0]);
 });
 
 it("deduplicates identical in-flight RPC reads", async () => {
@@ -63,4 +109,54 @@ describe("transaction classifier", () => {
 
 it("serializes bigint calldata as canonical decimal transport values", () => {
   expect(transportJson([1n, "x"])).toBe('["1","x"]');
+});
+
+it("cancels polling and leaves the submitted record recoverable", async () => {
+  const controller = new AbortController();
+  const getTransaction = vi.spyOn(readClient, "getTransaction");
+  const progress: Progress[] = [];
+  await executeWrite({
+    chain: "61999", contract: `0x${"1".repeat(40)}`, account: `0x${"2".repeat(40)}`,
+    method: "lock_rubric", intent: "lock_rubric:1:1", args: [], preRevision: "1", preHash: "a".repeat(64),
+    submit: async () => { controller.abort(); return `0x${"b".repeat(64)}`; },
+    verify: vi.fn(), progress: (value) => progress.push(value), signal: controller.signal,
+  });
+  expect(getTransaction).not.toHaveBeenCalled();
+  expect(progress.at(-1)?.phase).toBe("RECONCILIATION_REQUIRED");
+  expect(loadJournal()[0].status).toBe("RECONCILE");
+  getTransaction.mockRestore();
+});
+
+it("does not display success from a readback completed after context cancellation", async () => {
+  vi.useFakeTimers();
+  const controller = new AbortController();
+  const getTransaction = vi.spyOn(readClient, "getTransaction").mockResolvedValue({
+    statusName: "FINALIZED", txExecutionResultName: "FINISHED_WITH_RETURN",
+  } as never);
+  const progress: Progress[] = [];
+  const execution = executeWrite({
+    chain: "61999", contract: `0x${"1".repeat(40)}`, account: `0x${"2".repeat(40)}`,
+    method: "lock_rubric", intent: "lock_rubric:1:1", args: [], preRevision: "1", preHash: "a".repeat(64),
+    submit: async () => `0x${"b".repeat(64)}`,
+    verify: async () => { controller.abort(); }, progress: (value) => progress.push(value), signal: controller.signal,
+  });
+  await vi.runAllTimersAsync();
+  await execution;
+  expect(progress.some(({ phase }) => phase === "SUCCESS")).toBe(false);
+  expect(progress.at(-1)?.phase).toBe("RECONCILIATION_REQUIRED");
+  expect(loadJournal()[0].status).toBe("RECONCILE");
+  getTransaction.mockRestore();
+  vi.useRealTimers();
+});
+
+it("limits explicit reconciliation work to two concurrent entries", () => {
+  const gate = createConcurrencyGate(2);
+  const first = gate.tryEnter();
+  const second = gate.tryEnter();
+  expect(first).toBeTypeOf("function");
+  expect(second).toBeTypeOf("function");
+  expect(gate.tryEnter()).toBeUndefined();
+  expect(gate.active()).toBe(2);
+  first?.();
+  expect(gate.tryEnter()).toBeTypeOf("function");
 });
