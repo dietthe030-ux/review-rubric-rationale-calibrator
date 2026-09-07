@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { writeClient as makeWriteClient } from "./contract";
 
 export type Address = `0x${string}`;
 export type WalletId = "metamask" | "okx" | "rabby";
@@ -25,6 +26,7 @@ export interface WalletState {
   providers: readonly WalletOption[];
   selected?: WalletOption;
   account?: Address;
+  writeClient?: ReturnType<typeof makeWriteClient>;
   error?: string;
 }
 
@@ -73,7 +75,8 @@ function announcement(event: Event) {
   const detail = (event as CustomEvent).detail as { info?: { uuid?: unknown; rdns?: unknown }; provider?: unknown } | undefined;
   if (!detail || typeof detail.info?.uuid !== "string" || typeof detail.info.rdns !== "string" || !validProvider(detail.provider)) return;
   const item = catalog.find(({ rdns }) => rdns.includes(detail.info!.rdns!.toString().toLowerCase() as never));
-  if (item) accept(item.id, detail.provider, detail.info.uuid);
+  const advertisesIdentity = detail.provider.isMetaMask === true || detail.provider.isOkxWallet === true || detail.provider.isOKExWallet === true || detail.provider.isRabby === true;
+  if (item && (!advertisesIdentity || identity(detail.provider) === item.id)) accept(item.id, detail.provider, detail.info.uuid);
 }
 export function startDiscovery() {
   if (discoveryStarted || typeof window === "undefined") return;
@@ -102,16 +105,24 @@ function account(value: unknown): Address | undefined {
   const text = Array.isArray(value) ? String(value[0] ?? "") : String(value ?? "");
   return /^0x[0-9a-fA-F]{40}$/.test(text) ? text.toLowerCase() as Address : undefined;
 }
+export function walletHeaderAction(phase: WalletPhase): "CONNECTED" | "WRONG_CHAIN" | "CONNECT" {
+  return phase === "CONNECTED" ? "CONNECTED" : phase === "WRONG_CHAIN" ? "WRONG_CHAIN" : "CONNECT";
+}
 function bind(selected: WalletOption, chainHex: string) {
   detach?.();
   const onAccounts = (value: unknown) => {
+    if (state.selected?.provider !== selected.provider) return;
     const next = account(value);
-    next ? update({ ...state, account: next }) : wallet.disconnect();
+    if (!next) { wallet.disconnect(); return; }
+    const connected = state.phase === "CONNECTED";
+    update({ ...state, account: next, writeClient: connected ? makeWriteClient(selected.provider, next) : undefined });
   };
-  const onChain = (value: unknown) => String(value).toLowerCase() === chainHex.toLowerCase()
-    ? update({ ...state, phase: "CONNECTED", error: undefined })
-    : update({ ...state, phase: "WRONG_CHAIN", error: "Switch to the configured GenLayer network." });
-  const onDisconnect = () => wallet.disconnect();
+  const onChain = (value: unknown) => {
+    if (state.selected?.provider !== selected.provider) return;
+    const connected = String(value).toLowerCase() === chainHex.toLowerCase() && !!state.account;
+    update({ ...state, phase: connected ? "CONNECTED" : "WRONG_CHAIN", writeClient: connected ? makeWriteClient(selected.provider, state.account!) : undefined, error: connected ? undefined : "Switch to the configured GenLayer network." });
+  };
+  const onDisconnect = () => { if (state.selected?.provider === selected.provider) wallet.disconnect(); };
   selected.provider.on?.("accountsChanged", onAccounts);
   selected.provider.on?.("chainChanged", onChain);
   selected.provider.on?.("disconnect", onDisconnect);
@@ -129,17 +140,19 @@ export const wallet = {
   close() { if (state.phase === "CHOOSER_OPEN") update({ phase: "DISCONNECTED", providers: state.providers }); },
   disconnect() { detach?.(); detach = undefined; update({ phase: "DISCONNECTED", providers: state.providers }); },
   async switchNetwork(configuration: { chainId: string; chainName: string; nativeCurrency: unknown; rpcUrls: readonly string[]; blockExplorerUrls?: readonly string[] }) {
-    if (!state.selected) return;
+    const selected = state.selected;
+    if (!selected) return;
     try {
-      await state.selected.provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: configuration.chainId }] });
-      bind(state.selected, configuration.chainId);
-      update({ ...state, phase: "CONNECTED", error: undefined });
+      await selected.provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: configuration.chainId }] });
+      const active = account(await selected.provider.request({ method: "eth_accounts" }));
+      bind(selected, configuration.chainId);
+      update({ ...state, selected, account: active, phase: active ? "CONNECTED" : "WRONG_CHAIN", writeClient: active ? makeWriteClient(selected.provider, active) : undefined, error: active ? undefined : "The wallet has no active account." });
     } catch (cause) {
       if (cause && typeof cause === "object" && Number((cause as { code?: unknown }).code) === 4902) {
-        try { await state.selected.provider.request({ method: "wallet_addEthereumChain", params: [configuration] }); await state.selected.provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: configuration.chainId }] }); bind(state.selected, configuration.chainId); update({ ...state, phase: "CONNECTED", error: undefined }); return; }
+        try { await selected.provider.request({ method: "wallet_addEthereumChain", params: [configuration] }); await selected.provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: configuration.chainId }] }); const active = account(await selected.provider.request({ method: "eth_accounts" })); bind(selected, configuration.chainId); update({ ...state, selected, account: active, phase: active ? "CONNECTED" : "WRONG_CHAIN", writeClient: active ? makeWriteClient(selected.provider, active) : undefined, error: active ? undefined : "The wallet has no active account." }); return; }
         catch (addCause) { cause = addCause; }
       }
-      update({ ...state, phase: "WRONG_CHAIN", error: cause instanceof Error ? cause.message : "Network switch failed." });
+      update({ ...state, phase: "WRONG_CHAIN", writeClient: undefined, error: cause instanceof Error ? cause.message : "Network switch failed." });
     }
   },
   async connect(selected: WalletOption, chainHex: string) {
@@ -149,11 +162,12 @@ export const wallet = {
       if (!active) throw new Error("The wallet did not return a valid account.");
       const current = String(await selected.provider.request({ method: "eth_chainId" })).toLowerCase();
       if (current !== chainHex.toLowerCase()) {
+        bind(selected, chainHex);
         update({ phase: "WRONG_CHAIN", providers: state.providers, selected, account: active, error: "Switch to the configured GenLayer network." });
         return;
       }
       bind(selected, chainHex);
-      update({ phase: "CONNECTED", providers: state.providers, selected, account: active });
+      update({ phase: "CONNECTED", providers: state.providers, selected, account: active, writeClient: makeWriteClient(selected.provider, active) });
     } catch (cause) {
       update({ phase: "ERROR", providers: state.providers, error: cause instanceof Error ? cause.message : "Wallet connection failed." });
     }

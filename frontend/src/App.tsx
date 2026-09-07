@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { assertSuccessful, contractAddress, chain, chainHex, explorerUrl, readCase, readClient, readVersion, terminal, walletChain, writeClient, type CaseRecord } from "./contract";
+import { assertSuccessful, contractAddress, chain, chainHex, explorerUrl, readCase, readClient, readVersion, terminal, walletChain, type CaseRecord } from "./contract";
 import { loadJournal, updateRecord, type JournalRecord } from "./journal";
 import { deduped } from "./rpc";
 import { createConcurrencyGate, executeWrite, type Progress } from "./transaction";
-import { useProviders, useWallet, wallet, type WalletOption } from "./wallet";
+import { useProviders, useWallet, wallet, walletHeaderAction, type WalletOption } from "./wallet";
 
 const blank: Progress = { phase: "IDLE" };
 function journalSnapshot() {
@@ -133,7 +133,7 @@ export function App() {
     return () => { document.removeEventListener("visibilitychange", change); operation.current.abort(); };
   }, []);
 
-  const connected = session.phase === "CONNECTED" && session.account && session.selected;
+  const connected = session.phase === "CONNECTED" && session.account && session.selected && session.writeClient;
   const canWrite = Boolean(
     connected &&
       contractAddress &&
@@ -204,7 +204,7 @@ export function App() {
     const preHash = await hashText(JSON.stringify(before));
     setError("");
     try {
-      const client = writeClient(session.selected!.provider, session.account!);
+      const client = session.writeClient!;
       await executeWrite({
         chain: String(chain.id),
         contract: address,
@@ -313,7 +313,7 @@ export function App() {
             <span className="chain-name">{chain.name}</span>
           </div>
 
-          {connected ? (
+          {walletHeaderAction(session.phase) === "CONNECTED" ? (
             <button className="wallet-button connected" onClick={() => wallet.disconnect()} title={`Connected as ${session.account}`}>
               <span className="wallet-name-badge">{session.selected!.name}</span>
               <span className="account-address">{session.account!.slice(0, 6)}…{session.account!.slice(-4)}</span>

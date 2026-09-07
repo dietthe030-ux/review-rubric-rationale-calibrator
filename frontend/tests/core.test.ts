@@ -3,7 +3,7 @@ import { deduped, rpcMetrics } from "../src/rpc";
 import { loadJournal, reserve, updateRecord } from "../src/journal";
 import { assertSuccessful, readClient, terminal } from "../src/contract";
 import { createConcurrencyGate, executeWrite, transportJson, type Progress } from "../src/transaction";
-import { wallet, type Provider, type WalletOption } from "../src/wallet";
+import { providerOptions, startDiscovery, wallet, walletHeaderAction, type Provider, type WalletOption } from "../src/wallet";
 
 class StorageMock {
   data = new Map<string, string>();
@@ -28,6 +28,7 @@ class ProviderMock implements Provider {
   async request({ method }: { method: string }) {
     if (method === "eth_requestAccounts") return [this.account];
     if (method === "eth_chainId") return this.chain;
+    if (method === "eth_accounts") return [this.account];
     if (method === "wallet_switchEthereumChain") { this.chain = "0xf22f"; return null; }
     return null;
   }
@@ -40,28 +41,74 @@ class ProviderMock implements Provider {
   count(event: string) { return this.listeners.get(event)?.size ?? 0; }
 }
 
+it("discovers exact unique providers, rejects ambiguity, and replaces legacy identity late", async () => {
+  const legacy = new ProviderMock(); Object.assign(legacy, { isMetaMask: true });
+  const events = new Map<string, ((event: unknown) => void)[]>();
+  const fakeWindow = {
+    ethereum: legacy,
+    okxwallet: undefined,
+    addEventListener(event: string, listener: (event: unknown) => void) { events.set(event, [...(events.get(event) ?? []), listener]); },
+    dispatchEvent(event: { type: string; detail?: unknown }) { (events.get(event.type) ?? []).forEach((listener) => listener(event)); return true; },
+  };
+  Object.defineProperty(globalThis, "window", { configurable: true, value: fakeWindow });
+  startDiscovery();
+  await Promise.resolve();
+  expect(providerOptions()).toHaveLength(1);
+  expect(providerOptions()[0]).toMatchObject({ id: "metamask", legacy: true, provider: legacy });
+
+  const modern = new ProviderMock(); Object.assign(modern, { isMetaMask: true });
+  fakeWindow.dispatchEvent({ type: "eip6963:announceProvider", detail: { info: { uuid: "modern-meta", rdns: "io.metamask" }, provider: modern } });
+  const ambiguous = new ProviderMock(); Object.assign(ambiguous, { isMetaMask: true, isRabby: true });
+  fakeWindow.dispatchEvent({ type: "eip6963:announceProvider", detail: { info: { uuid: "ambiguous", rdns: "io.rabby" }, provider: ambiguous } });
+  const unsupported = new ProviderMock();
+  fakeWindow.dispatchEvent({ type: "eip6963:announceProvider", detail: { info: { uuid: "unsupported", rdns: "com.unknown.wallet" }, provider: unsupported } });
+  const okx = new ProviderMock(); Object.assign(okx, { isOkxWallet: true });
+  const rabby = new ProviderMock(); Object.assign(rabby, { isRabby: true });
+  fakeWindow.dispatchEvent({ type: "eip6963:announceProvider", detail: { info: { uuid: "okx", rdns: "com.okx.wallet" }, provider: okx } });
+  fakeWindow.dispatchEvent({ type: "eip6963:announceProvider", detail: { info: { uuid: "rabby", rdns: "io.rabby" }, provider: rabby } });
+  expect(providerOptions().map(({ id, provider, legacy: isLegacy }) => ({ id, provider, legacy: isLegacy }))).toEqual([
+    { id: "metamask", provider: modern, legacy: false }, { id: "okx", provider: okx, legacy: false }, { id: "rabby", provider: rabby, legacy: false },
+  ]);
+});
+
+it("keeps the rendered wallet action invariant explicit", () => {
+  expect(walletHeaderAction("CONNECTED")).toBe("CONNECTED");
+  expect(walletHeaderAction("WRONG_CHAIN")).toBe("WRONG_CHAIN");
+  expect(walletHeaderAction("DISCONNECTED")).toBe("CONNECT");
+});
+
 it("binds and synchronizes the selected provider after wrong-chain switching", async () => {
   const provider = new ProviderMock();
   const selected: WalletOption = { id: "metamask", name: "MetaMask", provider, uuid: "test" };
   await wallet.connect(selected, "0xf22f");
   expect(wallet.snapshot().phase).toBe("WRONG_CHAIN");
-  expect(provider.count("accountsChanged")).toBe(0);
+  expect(provider.count("accountsChanged")).toBe(1);
+  const wrongChainAccount = `0x${"3".repeat(40)}`;
+  provider.account = wrongChainAccount;
+  provider.emit("accountsChanged", [wrongChainAccount]);
+  expect(wallet.snapshot()).toMatchObject({ phase: "WRONG_CHAIN", account: wrongChainAccount, writeClient: undefined });
 
   await wallet.switchNetwork({ chainId: "0xf22f", chainName: "Studionet", nativeCurrency: {}, rpcUrls: [] });
-  expect(wallet.snapshot()).toMatchObject({ phase: "CONNECTED", account: provider.account, selected });
+  expect(wallet.snapshot()).toMatchObject({ phase: "CONNECTED", account: wrongChainAccount, selected });
+  expect(wallet.snapshot().writeClient).toBeDefined();
   expect(["accountsChanged", "chainChanged", "disconnect"].map((event) => provider.count(event))).toEqual([1, 1, 1]);
 
-  const nextAccount = `0x${"3".repeat(40)}`;
+  const nextAccount = `0x${"4".repeat(40)}`;
+  const firstClient = wallet.snapshot().writeClient;
   provider.emit("accountsChanged", [nextAccount]);
   expect(wallet.snapshot()).toMatchObject({ phase: "CONNECTED", account: nextAccount, selected });
+  expect(wallet.snapshot().writeClient).toBeDefined();
+  expect(wallet.snapshot().writeClient).not.toBe(firstClient);
   provider.emit("chainChanged", "0x1");
   expect(wallet.snapshot().phase).toBe("WRONG_CHAIN");
+  expect(wallet.snapshot().writeClient).toBeUndefined();
   provider.emit("accountsChanged", [provider.account]);
   expect(wallet.snapshot().phase).toBe("WRONG_CHAIN");
   provider.emit("chainChanged", "0xf22f");
   expect(wallet.snapshot().phase).toBe("CONNECTED");
   provider.emit("disconnect");
   expect(wallet.snapshot().phase).toBe("DISCONNECTED");
+  expect(wallet.snapshot().writeClient).toBeUndefined();
   expect(["accountsChanged", "chainChanged", "disconnect"].map((event) => provider.count(event))).toEqual([0, 0, 0]);
 });
 
