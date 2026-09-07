@@ -65,11 +65,13 @@ function accept(id: WalletId, provider: Provider, uuid: string, legacy = false) 
   const knownIdentity = identities.get(provider as object);
   const current = options.get(id);
   if ((knownUuid && knownUuid !== provider) || (knownIdentity && knownIdentity !== id) || (current && current.provider !== provider && !current.legacy)) return;
+  const replacingSelected = current && current.provider !== provider && current.legacy && state.selected?.id === id && state.selected.provider === current.provider;
   const item = catalog.find((entry) => entry.id === id)!;
   uuids.set(uuid, provider);
   identities.set(provider as object, id);
   options.set(id, { id, name: item.name, provider, uuid, legacy });
   publish();
+  if (replacingSelected) { detach?.(); detach = undefined; update({ phase: "DISCONNECTED", providers: providerSnapshot }); }
 }
 function announcement(event: Event) {
   const detail = (event as CustomEvent).detail as { info?: { uuid?: unknown; rdns?: unknown }; provider?: unknown } | undefined;

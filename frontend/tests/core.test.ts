@@ -55,9 +55,13 @@ it("discovers exact unique providers, rejects ambiguity, and replaces legacy ide
   await Promise.resolve();
   expect(providerOptions()).toHaveLength(1);
   expect(providerOptions()[0]).toMatchObject({ id: "metamask", legacy: true, provider: legacy });
+  await wallet.connect(providerOptions()[0], "0x1");
+  expect(wallet.snapshot().writeClient).toBeDefined();
 
   const modern = new ProviderMock(); Object.assign(modern, { isMetaMask: true });
   fakeWindow.dispatchEvent({ type: "eip6963:announceProvider", detail: { info: { uuid: "modern-meta", rdns: "io.metamask" }, provider: modern } });
+  expect(wallet.snapshot().phase).toBe("DISCONNECTED");
+  expect(wallet.snapshot().writeClient).toBeUndefined();
   const ambiguous = new ProviderMock(); Object.assign(ambiguous, { isMetaMask: true, isRabby: true });
   fakeWindow.dispatchEvent({ type: "eip6963:announceProvider", detail: { info: { uuid: "ambiguous", rdns: "io.rabby" }, provider: ambiguous } });
   const unsupported = new ProviderMock();
