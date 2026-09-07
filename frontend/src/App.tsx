@@ -35,6 +35,12 @@ function normalizedArgs(method: string, args: unknown[]) {
 type DimensionDraft = { id: string; min: number; max: number; anchors: Record<number, string> };
 const initialDimensions: DimensionDraft[] = [{ id: "clarity", min: 0, max: 2, anchors: { 0: "Unclear", 1: "Partly clear", 2: "Clear and specific" } }];
 
+export function WalletAction({ phase, name, account, onDisconnect, onSwitch, onConnect }: { phase: ReturnType<typeof walletHeaderAction> extends infer T ? T : never; name?: string; account?: string; onDisconnect: () => void; onSwitch: () => void; onConnect: () => void }) {
+  if (phase === "CONNECTED") return <button className="wallet-button connected" onClick={onDisconnect} title={`Connected as ${account}`}><span className="wallet-name-badge">{name}</span><span className="account-address">{account?.slice(0, 6)}…{account?.slice(-4)}</span><span className="disconnect-affordance">Disconnect</span></button>;
+  if (phase === "WRONG_CHAIN") return <button className="wallet-button warning" onClick={onSwitch}>Switch network</button>;
+  return <button className="wallet-button primary" onClick={onConnect}>Connect wallet</button>;
+}
+
 function humanOutcome(outcome?: string): string {
   if (!outcome) return "—";
   if (outcome === "CALIBRATED") return "Rationale matches the selected rubric anchors";
@@ -313,21 +319,7 @@ export function App() {
             <span className="chain-name">{chain.name}</span>
           </div>
 
-          {walletHeaderAction(session.phase) === "CONNECTED" ? (
-            <button className="wallet-button connected" onClick={() => wallet.disconnect()} title={`Connected as ${session.account}`}>
-              <span className="wallet-name-badge">{session.selected!.name}</span>
-              <span className="account-address">{session.account!.slice(0, 6)}…{session.account!.slice(-4)}</span>
-              <span className="disconnect-affordance">Disconnect</span>
-            </button>
-          ) : session.phase === "WRONG_CHAIN" ? (
-            <button className="wallet-button warning" onClick={() => wallet.switchNetwork(walletChain)}>
-              Switch network
-            </button>
-          ) : (
-            <button className="wallet-button primary" onClick={() => wallet.open()}>
-              Connect wallet
-            </button>
-          )}
+          <WalletAction phase={walletHeaderAction(session.phase)} name={session.selected?.name} account={session.account} onDisconnect={() => wallet.disconnect()} onSwitch={() => wallet.switchNetwork(walletChain)} onConnect={() => wallet.open()} />
         </div>
       </header>
 

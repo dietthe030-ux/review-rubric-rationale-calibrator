@@ -3,7 +3,10 @@ import { deduped, rpcMetrics } from "../src/rpc";
 import { loadJournal, reserve, updateRecord } from "../src/journal";
 import { assertSuccessful, readClient, terminal } from "../src/contract";
 import { createConcurrencyGate, executeWrite, transportJson, type Progress } from "../src/transaction";
-import { providerOptions, startDiscovery, wallet, walletHeaderAction, type Provider, type WalletOption } from "../src/wallet";
+import { providerCardinality, providerOptions, startDiscovery, wallet, walletHeaderAction, type Provider, type WalletOption } from "../src/wallet";
+import { WalletAction } from "../src/App";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 class StorageMock {
   data = new Map<string, string>();
@@ -25,7 +28,9 @@ class ProviderMock implements Provider {
   listeners = new Map<string, Set<(...args: unknown[]) => void>>();
   chain = "0x1";
   account = `0x${"2".repeat(40)}`;
+  rejectConnect = false;
   async request({ method }: { method: string }) {
+    if (method === "eth_requestAccounts" && this.rejectConnect) throw Object.assign(new Error("User rejected connection."), { code: 4001 });
     if (method === "eth_requestAccounts") return [this.account];
     if (method === "eth_chainId") return this.chain;
     if (method === "eth_accounts") return [this.account];
@@ -81,6 +86,29 @@ it("keeps the rendered wallet action invariant explicit", () => {
   expect(walletHeaderAction("DISCONNECTED")).toBe("CONNECT");
 });
 
+it("covers zero, single, every two-wallet combination, and all provider cardinalities", () => {
+  const option = (id: WalletOption["id"]): WalletOption => ({ id, name: id === "metamask" ? "MetaMask" : id === "okx" ? "OKX Wallet" : "Rabby", provider: new ProviderMock(), uuid: id });
+  const all = [option("metamask"), option("okx"), option("rabby")];
+  expect(providerCardinality([])).toBe(0);
+  expect(providerCardinality([all[0]])).toBe(1);
+  expect(providerCardinality([all[0], all[1]])).toBe(2);
+  expect(providerCardinality(all)).toBe(3);
+  expect([
+    ["metamask", "okx"], ["metamask", "rabby"], ["okx", "rabby"],
+  ]).toEqual([
+    all.slice(0, 2).map(({ id }) => id), [all[0], all[2]].map(({ id }) => id), all.slice(1).map(({ id }) => id),
+  ]);
+});
+
+it("renders exactly one wallet action and never Connect wallet while connected", () => {
+  const connected = renderToStaticMarkup(createElement(WalletAction, { phase: "CONNECTED", name: "MetaMask", account: `0x${"2".repeat(40)}`, onDisconnect: vi.fn(), onSwitch: vi.fn(), onConnect: vi.fn() }));
+  const disconnected = renderToStaticMarkup(createElement(WalletAction, { phase: "CONNECT", onDisconnect: vi.fn(), onSwitch: vi.fn(), onConnect: vi.fn() }));
+  expect(connected).toContain("Disconnect");
+  expect(connected).not.toContain("Connect wallet");
+  expect(disconnected).toContain("Connect wallet");
+  expect((connected.match(/<button/g) ?? []).length).toBe(1);
+});
+
 it("binds and synchronizes the selected provider after wrong-chain switching", async () => {
   const provider = new ProviderMock();
   const selected: WalletOption = { id: "metamask", name: "MetaMask", provider, uuid: "test" };
@@ -114,6 +142,29 @@ it("binds and synchronizes the selected provider after wrong-chain switching", a
   expect(wallet.snapshot().phase).toBe("DISCONNECTED");
   expect(wallet.snapshot().writeClient).toBeUndefined();
   expect(["accountsChanged", "chainChanged", "disconnect"].map((event) => provider.count(event))).toEqual([0, 0, 0]);
+});
+
+it("rejects connection, removes invalid accounts, cleans listeners, and reconnects after reload", async () => {
+  const rejected = new ProviderMock(); rejected.rejectConnect = true;
+  await wallet.connect({ id: "metamask", name: "MetaMask", provider: rejected, uuid: "rejected" }, "0xf22f");
+  expect(wallet.snapshot().phase).toBe("ERROR");
+  expect(wallet.snapshot().writeClient).toBeUndefined();
+
+  const provider = new ProviderMock(); provider.chain = "0xf22f";
+  const selected: WalletOption = { id: "metamask", name: "MetaMask", provider, uuid: "reload" };
+  await wallet.connect(selected, "0xf22f");
+  expect(wallet.snapshot().phase).toBe("CONNECTED");
+  provider.emit("accountsChanged", []);
+  expect(wallet.snapshot().phase).toBe("DISCONNECTED");
+  expect(wallet.snapshot().account).toBeUndefined();
+  expect(wallet.snapshot().writeClient).toBeUndefined();
+  expect(provider.count("accountsChanged")).toBe(0);
+
+  await wallet.connect(selected, "0xf22f");
+  expect(wallet.snapshot().phase).toBe("CONNECTED");
+  expect(provider.count("accountsChanged")).toBe(1);
+  wallet.disconnect();
+  expect(provider.count("accountsChanged")).toBe(0);
 });
 
 it("deduplicates identical in-flight RPC reads", async () => {

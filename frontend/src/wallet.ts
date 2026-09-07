@@ -94,6 +94,7 @@ export function startDiscovery() {
   });
 }
 export function providerOptions() { return providerSnapshot; }
+export function providerCardinality(options: readonly WalletOption[] = providerSnapshot) { return options.length; }
 export function useProviders() {
   startDiscovery();
   return useSyncExternalStore((fn) => { providerListeners.add(fn); return () => providerListeners.delete(fn); }, () => providerSnapshot, () => []);
