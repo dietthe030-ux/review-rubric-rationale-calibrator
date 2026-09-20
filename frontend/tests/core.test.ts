@@ -194,7 +194,7 @@ it("detaches the old provider before a failed replacement connection", async () 
   const nextProvider = new ProviderMock(); nextProvider.rejectConnect = true;
   await wallet.connect({ id: "metamask", name: "MetaMask", provider: oldProvider, uuid: "old" }, "0xf22d");
   expect(oldProvider.count("accountsChanged")).toBe(1);
-  await wallet.connect({ id: "rabby", name: "Rabby", provider: nextProvider, uuid: "next" }, "0xf22f");
+  await wallet.connect({ id: "rabby", name: "Rabby", provider: nextProvider, uuid: "next" }, "0xf22d");
   expect(wallet.snapshot().phase).toBe("ERROR");
   expect(oldProvider.count("accountsChanged")).toBe(0);
   oldProvider.emit("accountsChanged", [`0x${"9".repeat(40)}`]);
