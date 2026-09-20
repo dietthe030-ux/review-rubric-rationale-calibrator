@@ -23,6 +23,18 @@ FRONTEND_TARGET: GenLayer Studio Next (`https://studio-dev.genlayer.com/api`, ch
 
 Global controls: one shared client per chain/contract; normalized in-flight read deduplication; no render-driven portfolio polling; maximum two explicit journal reconciliations concurrently; maximum four visible journal entries per page; every timer is abortable and stops on hidden, unmount, disconnect, settlement, or context change. A delayed or mismatched readback remains `RECONCILE` and never displays success.
 
+## FRONTEND RPC BUDGET EVIDENCE
+
+FRONTEND_RPC_EVIDENCE_STATUS: COMPLETE
+MEASURED_CODE_RELEASE: `b47e2b2ef01b1ef667b3122e898c53e89f960006`
+MEASURED_CODE_TREE: `591713bb1cba597f4518f3f18f25131d436cb4a7`
+EVIDENCE_ARTIFACT: `docs/preflight/frontend-rpc-evidence-r11.md`
+EVIDENCE_ARTIFACT_SHA256: `7AFEBCC920D74098933F40410C2A661DDBA01D62E16DA258906923E8B03BF2DA`
+MEASUREMENT_RESULT: `AUTOMATED_EXACT_RELEASE_EVIDENCE: PASS`
+BROWSER_VERCEL_TELEMETRY: `NOT_STARTED_BY_USER_BOUNDARY`
+
+The bound artifact contains actual coordinator/helper call counts for Landing, Connect wallet, Case detail, Historical revision, every state-changing method, cancellation/quarantine, and Resume journal. It records request source/method, polling interval and attempts, retry/delay, cache hit/miss, in-flight deduplication, invalidation, authoritative readback, and transaction count. These are adapter/coordinator/helper observations from the exact measured release, not a claim of physical HTTP totals; browser/Vercel telemetry remains a later E2E requirement.
+
 ## HISTORICAL STUDIO RPC TEXT — NON-GOVERNING — DO NOT USE
 
 The remainder of this file is retained only as a historical R8 record of the retired stable-network Studio measurement experiment. It is not a current requirement, not a Studio plan, not a readiness gate, and must not be used as PRE_DEPLOY evidence. The current Studio target is `https://studio-dev.genlayer.com/api`, chain `61997`, and its plan is `docs/preflight/studio-next-e2e-plan.md` under `STUDIO.TOOL_EXECUTION`.

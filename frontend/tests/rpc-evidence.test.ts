@@ -23,7 +23,15 @@ beforeEach(() => {
   Object.defineProperty(globalThis, "crypto", { configurable: true, value: { getRandomValues: (bytes: Uint8Array) => { bytes.fill(7); return bytes; } } });
 });
 
-async function measureWrite(method: string, ordinal: number) {
+type LedgerRow = {
+  workflow: string; trigger: string; requestSource: string; rpcMethod: string;
+  requests: number; polling: number; pollingIntervalMs: number[]; pollingAttempts: number;
+  readbacks: number; submissions: number; transactionCount: number; retryCount: number; retryDelayMs: number;
+  cacheHits: number; cacheMisses: number; deduplicated: number; invalidations: number;
+  authoritativeReadback: boolean; terminal: string | undefined; method?: string; providerRequests?: string[];
+};
+
+async function measureWrite(method: string, ordinal: number): Promise<LedgerRow> {
   vi.useFakeTimers();
   const poll = vi.spyOn(readClient, "getTransaction").mockResolvedValue({ statusName: "FINALIZED", txExecutionResultName: "FINISHED_WITH_RETURN" } as never);
   const readback = vi.spyOn(readClient, "readContract").mockResolvedValue('"authoritative"' as never);
@@ -54,7 +62,7 @@ async function measureWrite(method: string, ordinal: number) {
 }
 
 it("emits exact-release frontend RPC budget evidence from the real coordinator/helpers", async () => {
-  const ledger = [
+  const ledger: LedgerRow[] = [
     { workflow: "Landing", trigger: "route load", requestSource: "static React render", rpcMethod: "none", requests: 0, polling: 0, pollingIntervalMs: [], pollingAttempts: 0, readbacks: 0, submissions: 0, transactionCount: 0, retryCount: 0, retryDelayMs: 0, cacheHits: 0, cacheMisses: 0, deduplicated: 0, invalidations: 0, authoritativeReadback: false, terminal: "static render" },
   ];
 
