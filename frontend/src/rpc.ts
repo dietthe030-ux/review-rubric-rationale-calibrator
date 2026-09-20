@@ -1,4 +1,4 @@
-export type Metric = { row: string; source: "network" | "in-flight"; key: string };
+export type Metric = { row: string; source: "network" | "in-flight" | "cache-hit" | "cache-miss" | "invalidation"; key: string };
 const inflight = new Map<string, Promise<unknown>>();
 const metrics: Metric[] = [];
 export async function deduped<T>(row: string, key: string, call: () => Promise<T>): Promise<T> {
@@ -10,3 +10,4 @@ export async function deduped<T>(row: string, key: string, call: () => Promise<T
   try { return await operation; } finally { if (inflight.get(key) === operation) inflight.delete(key); }
 }
 export function rpcMetrics() { return metrics.slice(); }
+export function invalidateRpc(row: string, key: string) { metrics.push({ row, source: "invalidation", key }); }

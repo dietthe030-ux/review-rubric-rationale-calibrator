@@ -1,6 +1,7 @@
 import type { Address } from "./wallet";
 import { assertSuccessful, readClient, terminal } from "./contract";
 import { removeUnsigned, reserve, updateRecord, type JournalRecord } from "./journal";
+import { invalidateRpc } from "./rpc";
 
 export type Phase = "IDLE" | "WAITING_FOR_WALLET" | "SUBMITTED" | "WAITING_FOR_FINALITY" | "VERIFYING_EXECUTION" | "VERIFYING_READBACK" | "SUCCESS" | "REJECTED" | "FAILED" | "RECONCILIATION_REQUIRED";
 export type Progress = { phase: Phase; hash?: string; message?: string };
@@ -59,6 +60,7 @@ export async function executeWrite(input: {
     input.progress({ phase: "VERIFYING_READBACK", hash });
     await input.verify({ ...record, tx_hash: hash, status: "SUBMITTED" });
     input.signal?.throwIfAborted();
+    invalidateRpc("write", `${input.chain}:${input.contract}:${input.method}`);
     await updateRecord(record.reservation, { status: "VERIFIED" }); input.progress({ phase: "SUCCESS", hash });
   } catch (cause) {
     await updateRecord(record.reservation, { status: "RECONCILE" });

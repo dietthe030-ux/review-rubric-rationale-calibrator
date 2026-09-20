@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { writeClient as makeWriteClient } from "./contract";
+import { invalidateRpc } from "./rpc";
 
 export type Address = `0x${string}`;
 export type WalletId = "metamask" | "okx" | "rabby";
@@ -138,11 +139,13 @@ function bind(selected: WalletOption, chainHex: string) {
     if (state.selected?.provider !== selected.provider) return;
     const next = account(value);
     if (!next) { wallet.disconnect(); return; }
+    invalidateRpc("wallet context", `account:${next}`);
     const connected = state.phase === "CONNECTED";
     update({ ...state, account: next, writeClient: connected ? makeWriteClient(selected.provider, next) : undefined });
   };
   const onChain = (value: unknown) => {
     if (state.selected?.provider !== selected.provider) return;
+    invalidateRpc("wallet context", `chain:${String(value).toLowerCase()}`);
     const connected = String(value).toLowerCase() === chainHex.toLowerCase() && !!state.account;
     update({ ...state, phase: connected ? "CONNECTED" : "WRONG_CHAIN", writeClient: connected ? makeWriteClient(selected.provider, state.account!) : undefined, error: connected ? undefined : "Switch to the configured GenLayer network." });
   };
@@ -162,7 +165,7 @@ export const wallet = {
   providers(value: readonly WalletOption[]) { update({ ...state, providers: value }); },
   open() { update({ phase: "DISCOVERING", providers: state.providers }); queueMicrotask(() => update({ phase: "CHOOSER_OPEN", providers: state.providers })); },
   close() { if (state.phase === "CHOOSER_OPEN") update({ phase: "DISCONNECTED", providers: state.providers }); },
-  disconnect() { detach?.(); detach = undefined; update({ phase: "DISCONNECTED", providers: state.providers }); },
+  disconnect() { invalidateRpc("wallet context", "disconnect"); detach?.(); detach = undefined; update({ phase: "DISCONNECTED", providers: state.providers }); },
   async switchNetwork(configuration: { chainId: string; chainName: string; nativeCurrency: unknown; rpcUrls: readonly string[]; blockExplorerUrls?: readonly string[] }) {
     const selected = state.selected;
     if (!selected) return;
