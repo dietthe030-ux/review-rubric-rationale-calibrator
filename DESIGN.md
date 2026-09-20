@@ -8,7 +8,7 @@ A locked design brief for the GenLayer public Rubric Rationale Calibrator.
 
 ## Product & Aesthetic Identity
 
-The Rubric Rationale Calibrator is a public verification and evidence instrument on GenLayer Studionet. It operates under a strict decision boundary: it independently evaluates whether a reviewer's written rationale supports the integer anchor they selected on a locked rubric. It deliberately **excludes** verification of external facts, submission quality, reviewer competence, or subjective fairness, and never alters submitted scores.
+The Rubric Rationale Calibrator is a public verification and evidence instrument on GenLayer Studio Next. It operates under a strict decision boundary: it independently evaluates whether a reviewer's written rationale supports the integer anchor they selected on a locked rubric. It deliberately **excludes** verification of external facts, submission quality, reviewer competence, or subjective fairness, and never alters submitted scores.
 
 The interface is designed as an **archival evidence instrument** — drawing from calibration gauges, ruled measurement marks, and ledger spec sheets. It is quiet, high-contrast, mathematically precise, and legible, communicating auditability without false claims of empirical certainty.
 

@@ -303,7 +303,7 @@ export function App() {
         <div className="header-brand-group">
           <BrandMark />
           <div className="brand-text-block">
-            <span className="brand-eyebrow">GenLayer Studionet · Contract Calibrator</span>
+            <span className="brand-eyebrow">GenLayer Studio Next · Contract Calibrator</span>
             <h1 className="brand-title">Rubric Rationale Calibrator</h1>
           </div>
         </div>
@@ -315,7 +315,7 @@ export function App() {
         </nav>
 
         <div className="header-action-group">
-          <div className="chain-pill" title="GenLayer Studionet (Chain 61999)">
+          <div className="chain-pill" title="GenLayer Studio Next">
             <span className="chain-name">{chain.name}</span>
           </div>
 
@@ -966,18 +966,18 @@ export function App() {
               <span className="colophon-wordmark">Rubric Rationale Calibrator</span>
             </div>
             <p className="colophon-description">
-              A public consistency instrument on GenLayer Studionet. Records independent validator classifications of written rationales against rubric anchors. The product records an agreed classification but does not guarantee the underlying score or rationale is correct.
+              A public consistency instrument on GenLayer Studio Next. Records independent validator classifications of written rationales against rubric anchors. The product records an agreed classification but does not guarantee the underlying score or rationale is correct.
             </p>
           </div>
 
           <div className="colophon-block spec-col">
             <h4 className="colophon-heading">Execution Invariants</h4>
             <ul className="colophon-list">
-              <li>Chain: GenLayer Studionet (ID: 61999)</li>
-              <li>Finality: Multi-stage poll (2s, 4s, 8s backoff)</li>
-              <li>Execution: FINALIZED + successful semantic execution</li>
-              <li>Historical Readback: get_version CAS verification</li>
-              <li>Storage: Crash-recoverable Web Locks journal</li>
+              <li>Network: GenLayer Studio Next</li>
+              <li>Finality: Operations remain pending until network confirmation.</li>
+              <li>Execution: Results appear only after confirmed execution.</li>
+              <li>Record: The final result is checked against the submitted version.</li>
+              <li>Recovery: Unfinished operations remain available for reconciliation.</li>
             </ul>
           </div>
 
@@ -1015,9 +1015,7 @@ export function App() {
             </button>
           </div>
 
-          <p className="dialog-helper-text">
-            Choose an available provider detected via EIP-6963 announcement or standard injection.
-          </p>
+          <p className="dialog-helper-text">Choose a wallet to continue.</p>
 
           <div className="wallet-options-list">
             {providers.length === 0 ? (
@@ -1038,9 +1036,7 @@ export function App() {
                   </div>
                   <div className="provider-info-wrapper">
                     <span className="provider-name">{option.name}</span>
-                    <span className="provider-detection-tag">
-                      {option.legacy ? "Injected" : "EIP-6963 Detected"}
-                    </span>
+                    <span className="provider-detection-tag">Available</span>
                   </div>
                   <span className="provider-chevron" aria-hidden="true">→</span>
                 </button>

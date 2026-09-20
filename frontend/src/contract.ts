@@ -3,7 +3,15 @@ import { studionet } from "genlayer-js/chains";
 import { ExecutionResult, TransactionStatus } from "genlayer-js/types";
 import type { Provider, Address } from "./wallet";
 
-export const chain = studionet;
+const studioNext = {
+  ...studionet,
+  id: 61997,
+  name: "GenLayer Studio Next",
+  rpcUrls: { default: { http: ["https://studio-dev.genlayer.com/api"] } },
+  blockExplorers: { default: { name: "GenLayer Studio Next Explorer", url: "https://explorer-studio-dev.genlayer.com" } },
+};
+
+export const chain = studioNext;
 export const chainHex = `0x${chain.id.toString(16)}`;
 export const explorerUrl = chain.blockExplorers?.default.url;
 export const walletChain = { chainId: chainHex, chainName: chain.name, nativeCurrency: chain.nativeCurrency, rpcUrls: chain.rpcUrls.default.http, blockExplorerUrls: explorerUrl ? [explorerUrl] : undefined };

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { deduped, rpcMetrics } from "../src/rpc";
 import { loadJournal, reserve, updateRecord } from "../src/journal";
-import { assertSuccessful, readClient, terminal } from "../src/contract";
+import { assertSuccessful, chain, explorerUrl, readClient, terminal, walletChain } from "../src/contract";
 import { createConcurrencyGate, executeWrite, transportJson, type Progress } from "../src/transaction";
 import { providerCardinality, providerOptions, resolveProviderOptions, startDiscovery, wallet, walletHeaderAction, type Provider, type WalletOption } from "../src/wallet";
 import { WalletAction } from "../src/App";
@@ -34,7 +34,7 @@ class ProviderMock implements Provider {
     if (method === "eth_requestAccounts") return [this.account];
     if (method === "eth_chainId") return this.chain;
     if (method === "eth_accounts") return [this.account];
-    if (method === "wallet_switchEthereumChain") { this.chain = "0xf22f"; return null; }
+    if (method === "wallet_switchEthereumChain") { this.chain = "0xf22d"; return null; }
     return null;
   }
   on(event: string, listener: (...args: unknown[]) => void) {
@@ -45,6 +45,13 @@ class ProviderMock implements Provider {
   emit(event: string, value?: unknown) { this.listeners.get(event)?.forEach((listener) => listener(value)); }
   count(event: string) { return this.listeners.get(event)?.size ?? 0; }
 }
+
+it("targets the deployed Studio Next network", () => {
+  expect(chain.id).toBe(61997);
+  expect(chain.rpcUrls.default.http).toEqual(["https://studio-dev.genlayer.com/api"]);
+  expect(walletChain.chainId).toBe("0xf22d");
+  expect(explorerUrl).toBe("https://explorer-studio-dev.genlayer.com");
+});
 
 it("discovers exact unique providers, rejects ambiguity, and replaces legacy identity late", async () => {
   expect(providerOptions()).toHaveLength(0);
@@ -115,7 +122,7 @@ it("renders exactly one wallet action and never Connect wallet while connected",
 it("binds and synchronizes the selected provider after wrong-chain switching", async () => {
   const provider = new ProviderMock();
   const selected: WalletOption = { id: "metamask", name: "MetaMask", provider, uuid: "test" };
-  await wallet.connect(selected, "0xf22f");
+  await wallet.connect(selected, "0xf22d");
   expect(wallet.snapshot().phase).toBe("WRONG_CHAIN");
   expect(provider.count("accountsChanged")).toBe(1);
   const wrongChainAccount = `0x${"3".repeat(40)}`;
@@ -123,7 +130,7 @@ it("binds and synchronizes the selected provider after wrong-chain switching", a
   provider.emit("accountsChanged", [wrongChainAccount]);
   expect(wallet.snapshot()).toMatchObject({ phase: "WRONG_CHAIN", account: wrongChainAccount, writeClient: undefined });
 
-  await wallet.switchNetwork({ chainId: "0xf22f", chainName: "Studionet", nativeCurrency: {}, rpcUrls: [] });
+  await wallet.switchNetwork({ chainId: "0xf22d", chainName: "Studio Next", nativeCurrency: {}, rpcUrls: [] });
   expect(wallet.snapshot()).toMatchObject({ phase: "CONNECTED", account: wrongChainAccount, selected });
   expect(wallet.snapshot().writeClient).toBeDefined();
   expect(["accountsChanged", "chainChanged", "disconnect"].map((event) => provider.count(event))).toEqual([1, 1, 1]);
@@ -139,7 +146,7 @@ it("binds and synchronizes the selected provider after wrong-chain switching", a
   expect(wallet.snapshot().writeClient).toBeUndefined();
   provider.emit("accountsChanged", [provider.account]);
   expect(wallet.snapshot().phase).toBe("WRONG_CHAIN");
-  provider.emit("chainChanged", "0xf22f");
+  provider.emit("chainChanged", "0xf22d");
   expect(wallet.snapshot().phase).toBe("CONNECTED");
   provider.emit("disconnect");
   expect(wallet.snapshot().phase).toBe("DISCONNECTED");
@@ -149,13 +156,13 @@ it("binds and synchronizes the selected provider after wrong-chain switching", a
 
 it("rejects connection, removes invalid accounts, cleans listeners, and reconnects after reload", async () => {
   const rejected = new ProviderMock(); rejected.rejectConnect = true;
-  await wallet.connect({ id: "metamask", name: "MetaMask", provider: rejected, uuid: "rejected" }, "0xf22f");
+  await wallet.connect({ id: "metamask", name: "MetaMask", provider: rejected, uuid: "rejected" }, "0xf22d");
   expect(wallet.snapshot().phase).toBe("ERROR");
   expect(wallet.snapshot().writeClient).toBeUndefined();
 
-  const provider = new ProviderMock(); provider.chain = "0xf22f";
+  const provider = new ProviderMock(); provider.chain = "0xf22d";
   const selected: WalletOption = { id: "metamask", name: "MetaMask", provider, uuid: "reload" };
-  await wallet.connect(selected, "0xf22f");
+  await wallet.connect(selected, "0xf22d");
   expect(wallet.snapshot().phase).toBe("CONNECTED");
   provider.emit("accountsChanged", []);
   expect(wallet.snapshot().phase).toBe("DISCONNECTED");
@@ -163,7 +170,7 @@ it("rejects connection, removes invalid accounts, cleans listeners, and reconnec
   expect(wallet.snapshot().writeClient).toBeUndefined();
   expect(provider.count("accountsChanged")).toBe(0);
 
-  await wallet.connect(selected, "0xf22f");
+  await wallet.connect(selected, "0xf22d");
   expect(wallet.snapshot().phase).toBe("CONNECTED");
   expect(provider.count("accountsChanged")).toBe(1);
   wallet.disconnect();
@@ -173,19 +180,19 @@ it("rejects connection, removes invalid accounts, cleans listeners, and reconnec
 it("disconnects when network recovery returns no active account", async () => {
   const provider = new ProviderMock();
   const selected: WalletOption = { id: "metamask", name: "MetaMask", provider, uuid: "empty-after-switch" };
-  await wallet.connect(selected, "0xf22f");
+  await wallet.connect(selected, "0xf22d");
   expect(wallet.snapshot().phase).toBe("WRONG_CHAIN");
   provider.account = "";
-  await wallet.switchNetwork({ chainId: "0xf22f", chainName: "Studionet", nativeCurrency: {}, rpcUrls: [] });
+  await wallet.switchNetwork({ chainId: "0xf22d", chainName: "Studio Next", nativeCurrency: {}, rpcUrls: [] });
   expect(wallet.snapshot().phase).toBe("DISCONNECTED");
   expect(wallet.snapshot().writeClient).toBeUndefined();
   expect(provider.count("accountsChanged")).toBe(0);
 });
 
 it("detaches the old provider before a failed replacement connection", async () => {
-  const oldProvider = new ProviderMock(); oldProvider.chain = "0xf22f";
+  const oldProvider = new ProviderMock(); oldProvider.chain = "0xf22d";
   const nextProvider = new ProviderMock(); nextProvider.rejectConnect = true;
-  await wallet.connect({ id: "metamask", name: "MetaMask", provider: oldProvider, uuid: "old" }, "0xf22f");
+  await wallet.connect({ id: "metamask", name: "MetaMask", provider: oldProvider, uuid: "old" }, "0xf22d");
   expect(oldProvider.count("accountsChanged")).toBe(1);
   await wallet.connect({ id: "rabby", name: "Rabby", provider: nextProvider, uuid: "next" }, "0xf22f");
   expect(wallet.snapshot().phase).toBe("ERROR");
@@ -208,7 +215,7 @@ it("deduplicates identical in-flight RPC reads", async () => {
 
 it("reserves immutable journal entries and blocks a same-case conflict", async () => {
   const input = {
-    chain: "61999", contract: `0x${"1".repeat(40)}`, account: `0x${"2".repeat(40)}`,
+    chain: "61997", contract: `0x${"1".repeat(40)}`, account: `0x${"2".repeat(40)}`,
     method: "lock_rubric", intent: "lock_rubric:1:1", args_json: "[]", pre_revision: "1", pre_hash: "a".repeat(64),
   };
   const record = await reserve(input);
@@ -220,7 +227,7 @@ it("reserves immutable journal entries and blocks a same-case conflict", async (
 
 it("keeps independent create intents separate by nonce", async () => {
   const base = {
-    chain: "61999", contract: `0x${"1".repeat(40)}`, account: `0x${"2".repeat(40)}`,
+    chain: "61997", contract: `0x${"1".repeat(40)}`, account: `0x${"2".repeat(40)}`,
     method: "create_rubric", args_json: "[]", pre_revision: "0", pre_hash: "a".repeat(64),
   };
   await reserve({ ...base, intent: "create:account:nonce-a" });
@@ -246,7 +253,7 @@ it("cancels polling and leaves the submitted record recoverable", async () => {
   const getTransaction = vi.spyOn(readClient, "getTransaction");
   const progress: Progress[] = [];
   await executeWrite({
-    chain: "61999", contract: `0x${"1".repeat(40)}`, account: `0x${"2".repeat(40)}`,
+    chain: "61997", contract: `0x${"1".repeat(40)}`, account: `0x${"2".repeat(40)}`,
     method: "lock_rubric", intent: "lock_rubric:1:1", args: [], preRevision: "1", preHash: "a".repeat(64),
     submit: async () => { controller.abort(); return `0x${"b".repeat(64)}`; },
     verify: vi.fn(), progress: (value) => progress.push(value), signal: controller.signal,
@@ -265,7 +272,7 @@ it("does not display success from a readback completed after context cancellatio
   } as never);
   const progress: Progress[] = [];
   const execution = executeWrite({
-    chain: "61999", contract: `0x${"1".repeat(40)}`, account: `0x${"2".repeat(40)}`,
+    chain: "61997", contract: `0x${"1".repeat(40)}`, account: `0x${"2".repeat(40)}`,
     method: "lock_rubric", intent: "lock_rubric:1:1", args: [], preRevision: "1", preHash: "a".repeat(64),
     submit: async () => `0x${"b".repeat(64)}`,
     verify: async () => { controller.abort(); }, progress: (value) => progress.push(value), signal: controller.signal,

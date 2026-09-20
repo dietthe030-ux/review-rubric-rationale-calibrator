@@ -1,10 +1,11 @@
-# RPC Budgets
+# Frontend RPC Budget
 
-Studio and frontend RPC accounting are separate. Both plans are locked before PRE_DEPLOY review; Studio evidence will be recorded separately after approval.
+This file is the frontend-only RPC budget matrix. Studio does not use a request-count, measurement-mode, instrumentation or RPC evidence gate; Studio readiness and E2E planning are governed only by `STUDIO.TOOL_EXECUTION` and the current Studio Next plan artifact.
 
 ## FRONTEND RPC BUDGET MATRIX
 
 FRONTEND_MATRIX_STATUS: READY
+FRONTEND_TARGET: GenLayer Studio Next (`https://studio-dev.genlayer.com/api`, chain `61997`, Explorer `https://explorer-studio-dev.genlayer.com/`)
 
 | Screen/workflow | Trigger | Read(s) | Write | Polling | Retry/backoff | Cache key/TTL | Invalidation | Terminal condition | Max RPC requests | Max transactions | Authoritative readback |
 |---|---|---|---|---|---|---|---|---|---:|---:|---|
@@ -22,7 +23,9 @@ FRONTEND_MATRIX_STATUS: READY
 
 Global controls: one shared client per chain/contract; normalized in-flight read deduplication; no render-driven portfolio polling; maximum two explicit journal reconciliations concurrently; maximum four visible journal entries per page; every timer is abortable and stops on hidden, unmount, disconnect, settlement, or context change. A delayed or mismatched readback remains `RECONCILE` and never displays success.
 
-## STUDIO RPC BUDGET
+## HISTORICAL STUDIO RPC TEXT — NON-GOVERNING — DO NOT USE
+
+The remainder of this file is retained only as a historical R8 record of the retired stable-network Studio measurement experiment. It is not a current requirement, not a Studio plan, not a readiness gate, and must not be used as PRE_DEPLOY evidence. The current Studio target is `https://studio-dev.genlayer.com/api`, chain `61997`, and its plan is `docs/preflight/studio-next-e2e-plan.md` under `STUDIO.TOOL_EXECUTION`.
 
 STUDIO_CAPABILITY_PROBE_STATUS: COMPLETE
 STUDIO_MEASUREMENT_MODE: OBSERVABLE_ACTION_LEDGER
