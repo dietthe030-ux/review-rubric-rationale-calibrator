@@ -2,7 +2,7 @@
 
 ## Current code-bearing release
 
-- Source revision: `4eae82d9a372684ef6291970716fa30d61dfad32`
+- Source revision: `27f3c9608d4136e3f399cbd46f89b66fa771091d`
 - Contract source SHA-256: `09A239AC767BDBD34BC86E71D09087C8D330FF577D52454065A47D6E39E69FB1`
 - Studio Next contract: [`0x939b18947EA1125668eD622c4f49c77167AAA4a5`](https://explorer-studio-dev.genlayer.com/address/0x939b18947EA1125668eD622c4f49c77167AAA4a5)
 - Deployment transaction: [`0x87cd13fcaef7e2cc627f6a2adbc98819e06c47716ce457d4849236530c7c0e5c`](https://explorer-studio-dev.genlayer.com/tx/0x87cd13fcaef7e2cc627f6a2adbc98819e06c47716ce457d4849236530c7c0e5c)
@@ -11,12 +11,12 @@
 
 ## Automated verification
 
-- Frontend: `npm --prefix frontend test -- --run` — 17 passed.
+- Frontend: `npm --prefix frontend test -- --run` — 18 passed.
 - Frontend build: `npm --prefix frontend run build` — passed; Vite reports only the disclosed large-chunk warning.
 - Contract: `python -m pytest -q -p no:cacheprovider` — 17 passed.
 - Contract syntax: `python -m py_compile contracts/main.py` — passed.
 - Contract lint/schema: `genvm-lint check contracts/main.py --json` — passed; 14 methods, 7 views, 7 writes, zero constructor parameters; informational I200 only.
-- Frontend request limits: [`docs/RPC-BUDGET.md`](RPC-BUDGET.md) records the bounded matrix, cancellation controls, and two-reconciliation ceiling.
+- Frontend request limits: [`docs/RPC-BUDGET.md`](RPC-BUDGET.md) records the bounded matrix, cancellation controls, two-reconciliation ceiling, and exact-release automated evidence in [`docs/preflight/frontend-rpc-evidence-r11.md`](preflight/frontend-rpc-evidence-r11.md). Browser/Vercel telemetry remains unstarted.
 
 ## Studio evidence
 
