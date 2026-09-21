@@ -268,7 +268,7 @@ export function App() {
         preRevision,
         preHash,
         submit: () => submitWithEstimatedFees({
-          estimate: () => client.estimateTransactionFeesForWrite({ address, functionName: method, args: args as never[], value: 0n }),
+          estimate: () => readClient.estimateTransactionFeesForWrite({ account: { address: session.account!, type: "json-rpc" }, address, functionName: method, args: args as never[], value: 0n }),
           write: (fees) => client.writeContract({ address, functionName: method, args: args as never[], value: 0n, fees: fees as never }),
         }),
         progress: setProgress,
