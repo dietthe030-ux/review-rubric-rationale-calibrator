@@ -25,8 +25,8 @@ Global controls: one shared client per chain/contract; normalized in-flight read
 ## FRONTEND RPC BUDGET EVIDENCE
 
 FRONTEND_RPC_EVIDENCE_STATUS: COMPLETE
-MEASURED_CODE_RELEASE: `bc98f5f1d20121b0d125632f1085599b859af90b`
-MEASURED_CODE_TREE: `a246aed989526926d97da80f456b8a33071df79a`
+MEASURED_CODE_RELEASE: `cf3abc33d4459551a981fac1e62daca0ac8caaf4`
+MEASURED_CODE_TREE: `2f7a65f1ab1ffa71ca5ec6675a9d8769e0085c4f`
 MEASUREMENT_RESULT: `AUTOMATED_EXACT_RELEASE_EVIDENCE: PASS`
 BROWSER_VERCEL_TELEMETRY: `IN_PROGRESS_SEPARATE_GATE`
 
@@ -48,7 +48,7 @@ The public ledger below contains actual coordinator/helper call counts for Landi
 | Hidden or disconnected | 0 | cancelled before first poll | 0 | 1 already submitted | 0 | `RECONCILIATION_REQUIRED` |
 | Explicit journal resume | 2 | none | 1 | 0 | 0 | `VERIFIED` |
 
-Exact command: `$env:FRONTEND_RPC_EVIDENCE_RELEASE='bc98f5f1d20121b0d125632f1085599b859af90b'; npx vitest run tests/rpc-evidence.test.ts --reporter=dot --silent=true`. Result: 1/1 evidence test passed at `2026-09-21T05:18:08Z`. The harness SHA-256 was `E7F49AE4FE9272CF9CCA175F2419E1CBAAC966CF5DFA6828E4AF222DA4402DCB`.
+Exact command: `$env:FRONTEND_RPC_EVIDENCE_RELEASE='cf3abc33d4459551a981fac1e62daca0ac8caaf4'; npx vitest run tests/rpc-evidence.test.ts --reporter=dot --silent=true`. Result: 1/1 evidence test passed at `2026-09-21T05:20:47Z`. The harness SHA-256 was `E7F49AE4FE9272CF9CCA175F2419E1CBAAC966CF5DFA6828E4AF222DA4402DCB`.
 
 ## HISTORICAL STUDIO RPC TEXT — NON-GOVERNING — DO NOT USE
 
