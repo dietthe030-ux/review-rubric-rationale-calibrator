@@ -1,19 +1,11 @@
 import { createClient } from "genlayer-js";
-import { studionet } from "genlayer-js/chains";
+import { studioDevnet } from "genlayer-js/chains";
 import { ExecutionResult, TransactionStatus } from "genlayer-js/types";
 import type { Provider, Address } from "./wallet";
 
-const studioNext = {
-  ...studionet,
-  id: 61997,
-  name: "GenLayer Studio Next",
-  rpcUrls: { default: { http: ["https://studio-dev.genlayer.com/api"] } },
-  blockExplorers: { default: { name: "GenLayer Studio Next Explorer", url: "https://explorer-studio-dev.genlayer.com" } },
-};
-
-export const chain = studioNext;
+export const chain = studioDevnet;
 export const chainHex = `0x${chain.id.toString(16)}`;
-export const explorerUrl = chain.blockExplorers?.default.url;
+export const explorerUrl = "https://explorer-studio-dev.genlayer.com";
 export const walletChain = { chainId: chainHex, chainName: chain.name, nativeCurrency: chain.nativeCurrency, rpcUrls: chain.rpcUrls.default.http, blockExplorerUrls: explorerUrl ? [explorerUrl] : undefined };
 const configured = String(import.meta.env.VITE_CONTRACT_ADDRESS ?? "").toLowerCase();
 export const contractAddress = /^0x[0-9a-f]{40}$/.test(configured) ? configured as Address : undefined;
