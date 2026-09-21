@@ -4,9 +4,10 @@ import { ExecutionResult, TransactionStatus } from "genlayer-js/types";
 import type { Provider, Address } from "./wallet";
 
 export const chain = studioDevnet;
+export const networkName = "GenLayer Studio Next";
 export const chainHex = `0x${chain.id.toString(16)}`;
 export const explorerUrl = "https://explorer-studio-dev.genlayer.com";
-export const walletChain = { chainId: chainHex, chainName: chain.name, nativeCurrency: chain.nativeCurrency, rpcUrls: chain.rpcUrls.default.http, blockExplorerUrls: explorerUrl ? [explorerUrl] : undefined };
+export const walletChain = { chainId: chainHex, chainName: networkName, nativeCurrency: chain.nativeCurrency, rpcUrls: chain.rpcUrls.default.http, blockExplorerUrls: explorerUrl ? [explorerUrl] : undefined };
 const configured = String(import.meta.env.VITE_CONTRACT_ADDRESS ?? "").toLowerCase();
 export const contractAddress = /^0x[0-9a-f]{40}$/.test(configured) ? configured as Address : undefined;
 export const readClient = createClient({ chain });

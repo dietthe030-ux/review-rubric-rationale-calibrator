@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { contractAddress, chain, chainHex, explorerUrl, readCase, readClient, readVersion, walletChain, type CaseRecord } from "./contract";
+import { contractAddress, chain, chainHex, explorerUrl, networkName, readCase, readClient, readVersion, walletChain, type CaseRecord } from "./contract";
 import { loadJournal, updateRecord, type JournalRecord } from "./journal";
 import { deduped } from "./rpc";
 import { classifyTransaction, createConcurrencyGate, executeWrite, type Progress } from "./transaction";
@@ -385,7 +385,7 @@ export function App() {
 
         <div className="header-action-group">
           <div className="chain-pill" title="GenLayer Studio Next">
-            <span className="chain-name">{chain.name}</span>
+            <span className="chain-name">{networkName}</span>
           </div>
 
           <WalletAction phase={walletHeaderAction(session.phase)} name={session.selected?.name} account={session.account} onDisconnect={() => wallet.disconnect()} onSwitch={() => wallet.switchNetwork(walletChain)} onConnect={() => wallet.open()} />

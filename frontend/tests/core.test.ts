@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { deduped, rpcMetrics } from "../src/rpc";
 import { loadJournal, reserve, updateRecord } from "../src/journal";
-import { assertSuccessful, chain, explorerUrl, readClient, terminal, walletChain } from "../src/contract";
+import { assertSuccessful, chain, explorerUrl, networkName, readClient, terminal, walletChain } from "../src/contract";
 import { classifyTransaction, createConcurrencyGate, executeWrite, transportJson, type Progress } from "../src/transaction";
 import { providerCardinality, providerOptions, resolveProviderOptions, startDiscovery, wallet, walletHeaderAction, type Provider, type WalletOption } from "../src/wallet";
 import { reviewDraftError, reviewerAddressError, retryAvailable, rubricDraftError, WalletAction } from "../src/App";
@@ -48,6 +48,8 @@ class ProviderMock implements Provider {
 
 it("targets the deployed Studio Next network", () => {
   expect(chain.id).toBe(61997);
+  expect(networkName).toBe("GenLayer Studio Next");
+  expect(walletChain.chainName).toBe(networkName);
   expect(chain.rpcUrls.default.http).toEqual(["https://studio-dev.genlayer.com/api"]);
   expect(walletChain.chainId).toBe("0xf22d");
   expect(explorerUrl).toBe("https://explorer-studio-dev.genlayer.com");
