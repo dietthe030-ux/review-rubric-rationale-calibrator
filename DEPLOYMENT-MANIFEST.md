@@ -1,6 +1,6 @@
 # Review Rubric Rationale Calibrator — Studio Deployment Manifest
 
-This is the secret-free recovery manifest for the current Studio Next deployment. It records the exact deployed bytes and identity; it does not claim POST_DEPLOY_TEST acceptance until the complete live matrix is complete.
+This secret-free public manifest records the exact deployed bytes, deployment identity and verified runtime result.
 
 ## Deployment identity
 
@@ -38,6 +38,6 @@ This is the secret-free recovery manifest for the current Studio Next deployment
 
 This contract is intentionally frozen. A post-deployment defect requires a new deployment from the recorded source and constructor manifest; this address cannot be upgraded. If the recorded actor becomes unavailable, the contract remains readable but cannot be upgraded (and has no upgrade path). If Studio Next resets chain state, redeploy the recorded source and rerun live verification; do not assume this address survives the reset. No private key, password, seed phrase, token or credential is stored in this manifest.
 
-## Acceptance boundary
+## Live acceptance
 
-The deployment is reconciled, but it is not the final release acceptance by itself. The ordered `POST_DEPLOY_TEST` Studio matrix in `docs/preflight/studio-next-e2e-plan.md` must still be executed with independent receipt, consensus, semantic-result and authoritative-readback evidence for every required case.
+The deployed contract completed its Studio lifecycle checks and the public Vercel application completed a separate wallet-signed end-to-end journey. Each consequential write reached GenLayer finality, reported successful execution and matched an authoritative contract readback. The public hashes are listed in [`docs/VERIFICATION.md`](docs/VERIFICATION.md).

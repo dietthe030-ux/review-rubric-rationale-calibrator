@@ -25,10 +25,10 @@ Global controls: one shared client per chain/contract; normalized in-flight read
 ## FRONTEND RPC BUDGET EVIDENCE
 
 FRONTEND_RPC_EVIDENCE_STATUS: COMPLETE
-MEASURED_CODE_RELEASE: `cf3abc33d4459551a981fac1e62daca0ac8caaf4`
-MEASURED_CODE_TREE: `2f7a65f1ab1ffa71ca5ec6675a9d8769e0085c4f`
+MEASURED_CODE_RELEASE: `9fb6fc921858e50e8014c159aa499d417caa86d5`
+MEASURED_CODE_TREE: `8da99688da109179423474cd66ac2c8f3d6957bd`
 MEASUREMENT_RESULT: `AUTOMATED_EXACT_RELEASE_EVIDENCE: PASS`
-BROWSER_VERCEL_TELEMETRY: `IN_PROGRESS_SEPARATE_GATE`
+BROWSER_VERCEL_TELEMETRY: `LIVE_BROWSER_E2E_COMPLETE`
 
 The public ledger below contains actual coordinator/helper call counts for Landing, Connect wallet, Case detail, Historical revision, every state-changing method, cancellation/quarantine, and Resume journal. It records request source/method, polling interval and attempts, retry/delay, cache hit/miss, in-flight deduplication, invalidation, authoritative readback, and transaction count. These are adapter/coordinator/helper observations from the exact measured release, not a claim of physical HTTP totals; browser/Vercel telemetry remains a separate E2E requirement.
 
@@ -38,46 +38,16 @@ The public ledger below contains actual coordinator/helper call counts for Landi
 | Connect wallet | 1 chain check | none | 0 | 0 | 0 | chain/account synchronized |
 | Case detail | 1 | none | 1 | 0 | 0 | authoritative case returned |
 | Historical revision | 1 | none | 1 | 0 | 0 | authoritative revision returned |
-| `create_rubric` | 3 | 1 at 2,000 ms | 2 | 1 | 1 | `SUCCESS` |
-| `replace_rubric` | 2 | 1 at 2,000 ms | 1 | 1 | 1 | `SUCCESS` |
-| `lock_rubric` | 2 | 1 at 2,000 ms | 1 | 1 | 1 | `SUCCESS` |
-| `put_review` | 2 | 1 at 2,000 ms | 1 | 1 | 1 | `SUCCESS` |
-| `freeze_review` | 2 | 1 at 2,000 ms | 1 | 1 | 1 | `SUCCESS` |
-| `calibrate_review` | 2 | 1 at 2,000 ms | 1 | 1 | 1 | `SUCCESS` |
-| `retry_review` | 2 | 1 at 2,000 ms | 1 | 1 | 1 | `SUCCESS` |
+| `create_rubric` | 4 | 1 fee estimate + 1 poll at 2,000 ms | 2 | 1 | 1 | `SUCCESS` |
+| `replace_rubric` | 3 | 1 fee estimate + 1 poll at 2,000 ms | 1 | 1 | 1 | `SUCCESS` |
+| `lock_rubric` | 3 | 1 fee estimate + 1 poll at 2,000 ms | 1 | 1 | 1 | `SUCCESS` |
+| `put_review` | 3 | 1 fee estimate + 1 poll at 2,000 ms | 1 | 1 | 1 | `SUCCESS` |
+| `freeze_review` | 3 | 1 fee estimate + 1 poll at 2,000 ms | 1 | 1 | 1 | `SUCCESS` |
+| `calibrate_review` | 3 | 1 fee estimate + 1 poll at 2,000 ms | 1 | 1 | 1 | `SUCCESS` |
+| `retry_review` | 3 | 1 fee estimate + 1 poll at 2,000 ms | 1 | 1 | 1 | `SUCCESS` |
 | Hidden or disconnected | 0 | cancelled before first poll | 0 | 1 already submitted | 0 | `RECONCILIATION_REQUIRED` |
 | Explicit journal resume | 2 | none | 1 | 0 | 0 | `VERIFIED` |
 
-Exact command: `$env:FRONTEND_RPC_EVIDENCE_RELEASE='cf3abc33d4459551a981fac1e62daca0ac8caaf4'; npx vitest run tests/rpc-evidence.test.ts --reporter=dot --silent=true`. Result: 1/1 evidence test passed at `2026-09-21T05:20:47Z`. The harness SHA-256 was `E7F49AE4FE9272CF9CCA175F2419E1CBAAC966CF5DFA6828E4AF222DA4402DCB`.
+Exact command: `$env:FRONTEND_RPC_EVIDENCE_RELEASE='9fb6fc921858e50e8014c159aa499d417caa86d5'; npx vitest run tests/rpc-evidence.test.ts --reporter=dot --silent=false`. Result: 1/1 evidence test passed at `2026-09-21T06:11:00Z`. The harness SHA-256 was `BB092916B4599DD6959C1A36C538CB57C541B060364EBA9F58CB5120F3EA9919`.
 
-## HISTORICAL STUDIO RPC TEXT — NON-GOVERNING — DO NOT USE
-
-The remainder of this file is retained only as a historical R8 record of the retired stable-network Studio measurement experiment. It is not a current requirement, not a Studio plan, not a readiness gate, and must not be used as PRE_DEPLOY evidence. The current Studio target is `https://studio-dev.genlayer.com/api`, chain `61997`, and its plan is `docs/preflight/studio-next-e2e-plan.md` under `STUDIO.TOOL_EXECUTION`.
-
-STUDIO_CAPABILITY_PROBE_STATUS: COMPLETE
-STUDIO_MEASUREMENT_MODE: OBSERVABLE_ACTION_LEDGER
-STUDIO_MEASUREMENT_TIMING: PRE_E2E
-STUDIO_CAPABILITY_PROBE_AT: 2026-09-07T03:44:50+07:00
-STUDIO_CAPABILITY_TOOL_OR_API: Codex in-app Browser control surface (`cua.getState`, browser-tab accessibility state, and primary-AI action log)
-STUDIO_CAPABILITY_CHECK: Before any Studio source load, deploy, signature, contract write, or E2E action, enumerate browser surfaces and inspect the Studio tab control surface for network/performance/request-log telemetry.
-STUDIO_CAPABILITY_RESULT: Physical network-request events and totals are not exposed. Every primary-AI browser action, transaction submission, existing hash, bounded status poll, terminal receipt read, authoritative readback, retry, and duplicate-transaction decision is observable and can be entered into an action ledger.
-STUDIO_PHYSICAL_COUNT_CLAIM: NONE
-STUDIO_ACTION_LEDGER_STATUS: READY
-
-Target environment: stable hosted Studionet at `https://studio.genlayer.com`, chain ID `61999`. The read-only account-selector check found the currently active accessible deployer `0xeF5D2119416A2f5afa35dCFA209766EFC1BE5902`, displaying `998 GEN`. This selection is Task-local and does not authorize a transaction before PRE_DEPLOY approval.
-
-## STUDIO RPC BUDGET MATRIX
-
-Every row is an observable-action ceiling, not a physical-request claim. One transaction submission is followed by at most three status polls at bounded intervals, one terminal receipt read, and one authoritative readback. Stop immediately on terminal error, quota/rate-limit cooldown, or an actual blocker. Reuse existing hashes; never redeploy or resubmit to obtain measurement.
-
-| Scenario | Observable setup/read actions | Transaction submissions | Max status polls | Terminal receipt reads | Authoritative readbacks | Retry/duplicate rule | Terminal evidence |
-|---|---:|---:|---:|---:|---:|---|---|
-| Network, account, exact-source envelope and schema | 4 | 0 | 0 | 0 | 0 | one source load/probe only | Studionet 61999, selected account, exact source hash, constructor and 14-method schema inventory |
-| Exact-source deployment | 1 | 1 | 3 | 1 | 1 | no redeploy; preserve hash on interruption | contract address, `FINALIZED`, semantic `SUCCESS`, consensus/finality, deployed-source parity |
-| Case A positive lifecycle: create, replace, lock, put, freeze, calibrate | 0 | 6 | 18 | 6 | 6 | no automatic retry; each next write waits for prior readback | exact revisions 1–6 and terminal non-ambiguous outcome |
-| Case B retry lifecycle: create, lock, put, freeze, calibrate to agreed ambiguity, then retry after on-chain cooldown | 0 | 6 | 18 | 6 | 6 | retry only if authoritative phase is `UNRESOLVED` and timestamp gate is open | exact revisions 1–6; retry result or honest model-dependent inability to enter retry state |
-| Negative/no-write controls: wrong authority and stale revision | 2 | 2 | 6 | 2 | 2 | never repeat a rejected control | finalized execution error and exact unchanged authoritative version/state |
-| Diagnostic reserve | 2 | 0 | 2 | 1 | 2 | only for an evidenced ambiguous hash/receipt/readback; no new transaction | classified existing transaction and reconciled state |
-| **Maximum planned total** | **9** | **15** | **47** | **16** | **17** | **0 blind retries; 0 duplicate transactions** | complete action ledger with explained variance |
-
-The retry branch is consensus-output dependent. It may execute only from an actually read-back `UNRESOLVED` state; a terminal non-ambiguous result must not be relabeled, replayed, or replaced merely to force the branch. Any inability to obtain a genuine agreed ambiguity is reported as a matrix variance for checkpoint review, never hidden or fabricated.
+The live Chrome run on the stable Vercel alias independently completed `create_rubric`, `lock_rubric`, `put_review`, `freeze_review`, and `calibrate_review` with five distinct transaction hashes, no duplicate submission, bounded automatic finality, semantic success, and exact authoritative case readback at revision 5. The browser control surface does not expose physical HTTP-event totals, so the automated ledger above is explicitly helper/coordinator instrumentation; the live run proves the user-visible lifecycle and transaction count without relabelling observations as packet-level telemetry. Transaction links and the final readback are published in [`VERIFICATION.md`](VERIFICATION.md).

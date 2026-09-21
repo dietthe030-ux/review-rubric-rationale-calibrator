@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { deduped, rpcMetrics } from "../src/rpc";
 import { readClient } from "../src/contract";
 import { loadJournal, reserve, updateRecord } from "../src/journal";
-import { executeWrite } from "../src/transaction";
+import { executeWrite, submitWithEstimatedFees } from "../src/transaction";
 import { wallet, type Provider } from "../src/wallet";
 
 class StorageMock {
@@ -39,6 +39,7 @@ async function measureWrite(method: string, ordinal: number): Promise<LedgerRow>
   vi.useFakeTimers();
   const timers = vi.spyOn(globalThis, "setTimeout");
   const metricStart = rpcMetrics().length;
+  const feeEstimate = vi.fn().mockResolvedValue({ distribution: {}, messageAllocations: [], feeValue: 1n });
   const poll = vi.spyOn(readClient, "getTransaction").mockResolvedValue({ statusName: "FINALIZED", txExecutionResultName: "FINISHED_WITH_RETURN" } as never);
   const readback = vi.spyOn(readClient, "readContract").mockResolvedValue('"authoritative"' as never);
   let submissions = 0;
@@ -47,7 +48,10 @@ async function measureWrite(method: string, ordinal: number): Promise<LedgerRow>
   const verifyReads = method === "create_rubric" ? 2 : 1;
   const execution = executeWrite({
     chain: "61997", contract, account, method, intent: `${method}:evidence:${ordinal}`, args: [], preRevision: String(ordinal), preHash: "a".repeat(64),
-    submit: async () => { submissions += 1; return txHash(String(ordinal).padStart(2, "0")); },
+    submit: () => submitWithEstimatedFees({
+      estimate: feeEstimate,
+      write: async () => { submissions += 1; return txHash(String(ordinal).padStart(2, "0")); },
+    }),
     verify: async () => {
       for (let index = 0; index < verifyReads; index += 1) {
         const value = await readClient.readContract({ address: contract, functionName: "get_version", args: [] } as never);
@@ -62,12 +66,13 @@ async function measureWrite(method: string, ordinal: number): Promise<LedgerRow>
   const pollingIntervalMs = timers.mock.calls.map((call) => Number(call[1])).filter((value) => [2000, 4000, 8000].includes(value));
   expect(observedReadbacks).toEqual(Array.from({ length: verifyReads }, () => '"authoritative"'));
   expect(progress.at(-1)).toBe("SUCCESS");
+  expect(feeEstimate).toHaveBeenCalledOnce();
   expect(submissions).toBe(1);
   expect(metrics.filter((item) => item.source === "invalidation")).toHaveLength(1);
   const result: LedgerRow = {
     workflow: method, trigger: "explicit submit", requestSource: "shared readClient + executeWrite coordinator",
-    rpcMethod: "getTransaction + get_version", method,
-    requests: poll.mock.calls.length + readback.mock.calls.length,
+    rpcMethod: "estimateTransactionFeesForWrite + getTransaction + get_version", method,
+    requests: feeEstimate.mock.calls.length + poll.mock.calls.length + readback.mock.calls.length,
     polling: poll.mock.calls.length, pollingIntervalMs, pollingAttempts: poll.mock.calls.length,
     readbacks: observedReadbacks.length, submissions, transactionCount: submissions,
     retryCount: progress.filter((phase) => phase === "RETRYING").length, retryDelayMs: 0,

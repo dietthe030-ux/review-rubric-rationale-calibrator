@@ -1,6 +1,13 @@
 AGENTS.md
 CLAUDE.md
 docs/preflight/
+DESIGN.md
+FRONTEND-DESIGN-RATIONALE.md
+IMPLEMENTATION-PLAN.md
+RESEARCH-HANDOFF.md
+SPECIFICATION.md
+STAGE-1.md
+STAGE-2.md
 .pytest_cache/
 __pycache__/
 node_modules/
