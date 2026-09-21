@@ -25,14 +25,30 @@ Global controls: one shared client per chain/contract; normalized in-flight read
 ## FRONTEND RPC BUDGET EVIDENCE
 
 FRONTEND_RPC_EVIDENCE_STATUS: COMPLETE
-MEASURED_CODE_RELEASE: `a92fa6c21a24249e67d63ea8cfb5424ec5fbf41d`
-MEASURED_CODE_TREE: `b1898c37fd0b57b7943789dfa3ca59e63a35148d`
-EVIDENCE_ARTIFACT: `docs/preflight/frontend-rpc-evidence-r11.md`
-EVIDENCE_ARTIFACT_SHA256: `10E21B8FD463B76F7BC1A9FEBA1D41A9E53452640AF6F71960D87C53EAC0052B`
+MEASURED_CODE_RELEASE: `d144e6a3064993649c34abb2eb99b536ce0bf842`
+MEASURED_CODE_TREE: `d092bfd948cdab2a524100f6c724d417caf3cbdc`
 MEASUREMENT_RESULT: `AUTOMATED_EXACT_RELEASE_EVIDENCE: PASS`
-BROWSER_VERCEL_TELEMETRY: `NOT_STARTED_BY_USER_BOUNDARY`
+BROWSER_VERCEL_TELEMETRY: `IN_PROGRESS_SEPARATE_GATE`
 
-The bound artifact contains actual coordinator/helper call counts for Landing, Connect wallet, Case detail, Historical revision, every state-changing method, cancellation/quarantine, and Resume journal. It records request source/method, polling interval and attempts, retry/delay, cache hit/miss, in-flight deduplication, invalidation, authoritative readback, and transaction count. These are adapter/coordinator/helper observations from the exact measured release, not a claim of physical HTTP totals; browser/Vercel telemetry remains a later E2E requirement.
+The public ledger below contains actual coordinator/helper call counts for Landing, Connect wallet, Case detail, Historical revision, every state-changing method, cancellation/quarantine, and Resume journal. It records request source/method, polling interval and attempts, retry/delay, cache hit/miss, in-flight deduplication, invalidation, authoritative readback, and transaction count. These are adapter/coordinator/helper observations from the exact measured release, not a claim of physical HTTP totals; browser/Vercel telemetry remains a separate E2E requirement.
+
+| Observed workflow | Requests | Polling | Readbacks | Submissions | Invalidation | Terminal |
+|---|---:|---|---:|---:|---:|---|
+| Landing | 0 | none | 0 | 0 | 0 | static render |
+| Connect wallet | 1 chain check | none | 0 | 0 | 0 | chain/account synchronized |
+| Case detail | 1 | none | 1 | 0 | 0 | authoritative case returned |
+| Historical revision | 1 | none | 1 | 0 | 0 | authoritative revision returned |
+| `create_rubric` | 3 | 1 at 2,000 ms | 2 | 1 | 1 | `SUCCESS` |
+| `replace_rubric` | 2 | 1 at 2,000 ms | 1 | 1 | 1 | `SUCCESS` |
+| `lock_rubric` | 2 | 1 at 2,000 ms | 1 | 1 | 1 | `SUCCESS` |
+| `put_review` | 2 | 1 at 2,000 ms | 1 | 1 | 1 | `SUCCESS` |
+| `freeze_review` | 2 | 1 at 2,000 ms | 1 | 1 | 1 | `SUCCESS` |
+| `calibrate_review` | 2 | 1 at 2,000 ms | 1 | 1 | 1 | `SUCCESS` |
+| `retry_review` | 2 | 1 at 2,000 ms | 1 | 1 | 1 | `SUCCESS` |
+| Hidden or disconnected | 0 | cancelled before first poll | 0 | 1 already submitted | 0 | `RECONCILIATION_REQUIRED` |
+| Explicit journal resume | 2 | none | 1 | 0 | 0 | `VERIFIED` |
+
+Exact command: `$env:FRONTEND_RPC_EVIDENCE_RELEASE='d144e6a3064993649c34abb2eb99b536ce0bf842'; npx vitest run tests/rpc-evidence.test.ts --reporter=verbose --silent=false`. Result: 1/1 evidence test passed at `2026-09-21T05:05:56Z`. The harness SHA-256 was `E7F49AE4FE9272CF9CCA175F2419E1CBAAC966CF5DFA6828E4AF222DA4402DCB`.
 
 ## HISTORICAL STUDIO RPC TEXT — NON-GOVERNING — DO NOT USE
 
