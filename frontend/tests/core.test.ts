@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { deduped, rpcMetrics } from "../src/rpc";
 import { loadJournal, reserve, updateRecord } from "../src/journal";
 import { assertSuccessful, chain, configuredContractAddress, explorerUrl, networkName, readClient, terminal, walletChain } from "../src/contract";
-import { classifyTransaction, createConcurrencyGate, executeWrite, transportJson, type Progress } from "../src/transaction";
+import { classifyTransaction, createConcurrencyGate, executeWrite, submitWithEstimatedFees, transportJson, type Progress } from "../src/transaction";
 import { providerCardinality, providerOptions, resolveProviderOptions, startDiscovery, wallet, walletHeaderAction, type Provider, type WalletOption } from "../src/wallet";
 import { reviewDraftError, reviewerAddressError, retryAvailable, rubricDraftError, WalletAction } from "../src/App";
 import { createElement } from "react";
@@ -285,6 +285,36 @@ describe("transaction classifier", () => {
 
 it("serializes bigint calldata as canonical decimal transport values", () => {
   expect(transportJson([1n, "x"])).toBe('["1","x"]');
+});
+
+it("estimates and forwards a nonzero fee preset before submission", async () => {
+  const fees = { distribution: { leaderTimeunitsAllocation: 1n }, messageAllocations: [], feeValue: 7n };
+  const estimate = vi.fn().mockResolvedValue(fees);
+  const write = vi.fn().mockResolvedValue(`0x${"a".repeat(64)}`);
+  await expect(submitWithEstimatedFees({ estimate, write })).resolves.toBe(`0x${"a".repeat(64)}`);
+  expect(estimate).toHaveBeenCalledOnce();
+  expect(write).toHaveBeenCalledWith(fees);
+});
+
+it("refuses a zero fee estimate without opening a wallet submission", async () => {
+  const write = vi.fn();
+  await expect(submitWithEstimatedFees({
+    estimate: async () => ({ distribution: {}, feeValue: 0n }), write,
+  })).rejects.toThrow(/zero transaction fee/i);
+  expect(write).not.toHaveBeenCalled();
+});
+
+it("records a reverted EVM envelope as a terminal error", async () => {
+  const hash = `0x${"c".repeat(64)}`;
+  const progress: Progress[] = [];
+  await executeWrite({
+    chain: "61997", contract: `0x${"1".repeat(40)}`, account: `0x${"2".repeat(40)}`,
+    method: "create_rubric", intent: "create:owner:nonce", args: [], preRevision: "0", preHash: "a".repeat(64),
+    submit: async () => { throw new Error(`Transaction reverted: EVM tx ${hash}. FeeValueMustBeNonZero(1)`); },
+    verify: vi.fn(), progress: (value) => progress.push(value),
+  });
+  expect(progress.at(-1)).toMatchObject({ phase: "FAILED", hash });
+  expect(loadJournal()[0]).toMatchObject({ status: "FINALIZED_ERROR", tx_hash: hash });
 });
 
 it("cancels polling and leaves the submitted record recoverable", async () => {

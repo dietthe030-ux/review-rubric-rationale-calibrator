@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { contractAddress, chain, chainHex, explorerUrl, networkName, readCase, readClient, readVersion, walletChain, type CaseRecord } from "./contract";
-import { loadJournal, updateRecord, type JournalRecord } from "./journal";
+import { loadJournal, removeUnsigned, updateRecord, type JournalRecord } from "./journal";
 import { deduped } from "./rpc";
-import { classifyTransaction, createConcurrencyGate, executeWrite, type Progress } from "./transaction";
+import { classifyTransaction, createConcurrencyGate, executeWrite, submitWithEstimatedFees, type Progress } from "./transaction";
 import { useProviders, useWallet, wallet, walletHeaderAction, type WalletOption } from "./wallet";
 
 const blank: Progress = { phase: "IDLE" };
@@ -267,7 +267,10 @@ export function App() {
         args,
         preRevision,
         preHash,
-        submit: () => client.writeContract({ address, functionName: method, args: args as never[], value: 0n }),
+        submit: () => submitWithEstimatedFees({
+          estimate: () => client.estimateTransactionFeesForWrite({ address, functionName: method, args: args as never[], value: 0n }),
+          write: (fees) => client.writeContract({ address, functionName: method, args: args as never[], value: 0n, fees: fees as never }),
+        }),
         progress: setProgress,
         verify: async () => {
           const id = method === "create_rubric" ? String(await readClient.readContract({ address, functionName: "get_id_by_nonce", args: [session.account!, args[0] as string] })) : caseId;
@@ -939,13 +942,22 @@ export function App() {
                   </div>
                   {!["VERIFIED", "FINALIZED_ERROR"].includes(item.status) && (
                     <div className="record-action-row">
-                      <button
-                        className="action-button secondary compact"
-                        disabled={item.chain !== String(chain.id) || !sameAddress(item.contract, contractAddress) || !sameAddress(item.account, session.account)}
-                        onClick={() => reconcile(item)}
-                      >
-                        Resume exact transaction
-                      </button>
+                      {item.tx_hash ? (
+                        <button
+                          className="action-button secondary compact"
+                          disabled={item.chain !== String(chain.id) || !sameAddress(item.contract, contractAddress) || !sameAddress(item.account, session.account)}
+                          onClick={() => reconcile(item)}
+                        >
+                          Resume exact transaction
+                        </button>
+                      ) : (
+                        <button
+                          className="action-button secondary compact"
+                          onClick={async () => { await removeUnsigned(item.reservation); setJournal(loadJournal()); }}
+                        >
+                          Discard no-hash reservation
+                        </button>
+                      )}
                     </div>
                   )}
                 </article>

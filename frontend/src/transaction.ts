@@ -27,6 +27,19 @@ export function createConcurrencyGate(limit: number) {
 }
 export const transportJson = (value: unknown) => JSON.stringify(value, (_key, item) => typeof item === "bigint" ? item.toString() : item);
 function rejected(cause: unknown) { return !!cause && typeof cause === "object" && Number((cause as { code?: unknown }).code) === 4001; }
+function revertedEnvelope(cause: unknown) {
+  const message = cause instanceof Error ? cause.message : String(cause ?? "");
+  const match = message.match(/Transaction reverted:\s*EVM tx\s*(0x[0-9a-fA-F]{64})/i);
+  return match ? { hash: match[1].toLowerCase(), message } : undefined;
+}
+export async function submitWithEstimatedFees(input: {
+  estimate: () => Promise<{ distribution: unknown; messageAllocations?: unknown[]; feeValue: bigint }>;
+  write: (fees: { distribution: unknown; messageAllocations?: unknown[]; feeValue: bigint }) => Promise<unknown>;
+}) {
+  const estimate = await input.estimate();
+  if (estimate.feeValue <= 0n) throw new Error("The network returned a zero transaction fee estimate.");
+  return input.write({ distribution: estimate.distribution, messageAllocations: estimate.messageAllocations, feeValue: estimate.feeValue });
+}
 export async function executeWrite(input: {
   chain: string; contract: Address; account: Address; method: string; intent: string; args: unknown[];
   preRevision: string; preHash: string; submit: () => Promise<unknown>;
@@ -40,6 +53,12 @@ export async function executeWrite(input: {
     hash = String(await input.submit());
   } catch (cause) {
     if (rejected(cause)) { await removeUnsigned(record.reservation); input.progress({ phase: "REJECTED" }); return; }
+    const reverted = revertedEnvelope(cause);
+    if (reverted) {
+      await updateRecord(record.reservation, { tx_hash: reverted.hash, status: "FINALIZED_ERROR" });
+      input.progress({ phase: "FAILED", hash: reverted.hash, message: reverted.message });
+      return;
+    }
     await updateRecord(record.reservation, { status: "RECONCILE" });
     input.progress({ phase: "RECONCILIATION_REQUIRED", message: "Wallet outcome is uncertain. Do not submit again." }); throw cause;
   }
