@@ -9,8 +9,8 @@ const LOCK = "genlayer-journal-v1";
 function validate(value: unknown): value is JournalRecord {
   if (!value || typeof value !== "object") return false;
   const item = value as Partial<JournalRecord>;
-  return item.v === 1 && /^[0-9a-f]{32}$/.test(item.reservation ?? "") && /^0x[0-9a-f]{40}$/.test(item.contract ?? "") &&
-    /^0x[0-9a-f]{40}$/.test(item.account ?? "") && typeof item.method === "string" && typeof item.intent === "string" &&
+  return item.v === 1 && /^[0-9a-f]{32}$/.test(item.reservation ?? "") && /^0x[0-9a-fA-F]{40}$/.test(item.contract ?? "") &&
+    /^0x[0-9a-fA-F]{40}$/.test(item.account ?? "") && typeof item.method === "string" && typeof item.intent === "string" &&
     typeof item.args_json === "string" && typeof item.pre_revision === "string" && /^[0-9a-f]{64}$/.test(item.pre_hash ?? "") &&
     typeof item.tx_hash === "string" && ["SIGNING", "SUBMITTED", "RECONCILE", "FINALIZED_ERROR", "VERIFIED"].includes(item.status ?? "");
 }
