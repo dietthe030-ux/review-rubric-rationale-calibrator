@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { deduped, rpcMetrics } from "../src/rpc";
 import { loadJournal, reserve, updateRecord } from "../src/journal";
 import { assertSuccessful, chain, configuredContractAddress, explorerUrl, networkName, readClient, terminal, walletChain } from "../src/contract";
-import { classifyTransaction, createConcurrencyGate, executeWrite, submitWithEstimatedFees, transportJson, type Progress } from "../src/transaction";
+import { classifyTransaction, createConcurrencyGate, executeWrite, FINALITY_DELAYS_MS, submitWithEstimatedFees, transportJson, type Progress } from "../src/transaction";
 import { providerCardinality, providerOptions, resolveProviderOptions, startDiscovery, wallet, walletHeaderAction, type Provider, type WalletOption } from "../src/wallet";
 import { reviewDraftError, reviewerAddressError, retryAvailable, rubricDraftError, WalletAction } from "../src/App";
 import { createElement } from "react";
@@ -351,6 +351,29 @@ it("does not display success from a readback completed after context cancellatio
   expect(progress.some(({ phase }) => phase === "SUCCESS")).toBe(false);
   expect(progress.at(-1)?.phase).toBe("RECONCILIATION_REQUIRED");
   expect(loadJournal()[0].status).toBe("RECONCILE");
+  getTransaction.mockRestore();
+  vi.useRealTimers();
+});
+
+it("keeps bounded polling long enough to verify delayed finality automatically", async () => {
+  vi.useFakeTimers();
+  const getTransaction = vi.spyOn(readClient, "getTransaction")
+    .mockResolvedValueOnce({ statusName: "ACCEPTED" } as never)
+    .mockResolvedValueOnce({ statusName: "ACCEPTED" } as never)
+    .mockResolvedValueOnce({ statusName: "ACCEPTED" } as never)
+    .mockResolvedValueOnce({ statusName: "FINALIZED", txExecutionResultName: "FINISHED_WITH_RETURN" } as never);
+  const progress: Progress[] = [];
+  const execution = executeWrite({
+    chain: "61997", contract: `0x${"1".repeat(40)}`, account: `0x${"2".repeat(40)}`,
+    method: "lock_rubric", intent: "lock_rubric:2:2", args: [], preRevision: "1", preHash: "a".repeat(64),
+    submit: async () => `0x${"d".repeat(64)}`, verify: vi.fn(), progress: (value) => progress.push(value),
+  });
+  await vi.runAllTimersAsync();
+  await execution;
+  expect(FINALITY_DELAYS_MS).toEqual([2000, 4000, 8000, 12000, 16000]);
+  expect(getTransaction).toHaveBeenCalledTimes(4);
+  expect(progress.at(-1)?.phase).toBe("SUCCESS");
+  expect(loadJournal()[0].status).toBe("VERIFIED");
   getTransaction.mockRestore();
   vi.useRealTimers();
 });

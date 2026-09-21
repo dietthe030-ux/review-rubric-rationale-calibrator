@@ -11,7 +11,7 @@
 
 ## Automated verification
 
-- Frontend: `npm --prefix frontend test -- --run` — 25 passed.
+- Frontend: `npm --prefix frontend test -- --run` — 26 passed.
 - Frontend build: `npm --prefix frontend run build` — passed; Vite reports only the disclosed large-chunk warning.
 - Contract: `python -m pytest -q -p no:cacheprovider` — 17 passed.
 - Contract syntax: `python -m py_compile contracts/main.py` — passed.

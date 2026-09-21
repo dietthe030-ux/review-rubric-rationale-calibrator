@@ -5,6 +5,7 @@ import { invalidateRpc } from "./rpc";
 
 export type Phase = "IDLE" | "WAITING_FOR_WALLET" | "SUBMITTED" | "WAITING_FOR_FINALITY" | "VERIFYING_EXECUTION" | "VERIFYING_READBACK" | "SUCCESS" | "REJECTED" | "FAILED" | "RECONCILIATION_REQUIRED";
 export type Progress = { phase: Phase; hash?: string; message?: string };
+export const FINALITY_DELAYS_MS = [2000, 4000, 8000, 12000, 16000] as const;
 export function classifyTransaction(transaction: unknown): { state: "PENDING" | "SUCCESS" | "FAILED"; message?: string } {
   if (!terminal(transaction)) return { state: "PENDING" };
   try { assertSuccessful(transaction); return { state: "SUCCESS" }; }
@@ -70,7 +71,7 @@ export async function executeWrite(input: {
   input.progress({ phase: "SUBMITTED", hash });
   try {
     let transaction: unknown;
-    for (const delay of [2000, 4000, 8000]) {
+    for (const delay of FINALITY_DELAYS_MS) {
       input.progress({ phase: "WAITING_FOR_FINALITY", hash }); await wait(delay, input.signal);
       input.signal?.throwIfAborted();
       transaction = await readClient.getTransaction({ hash: hash as never });
