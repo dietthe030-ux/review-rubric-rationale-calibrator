@@ -65,7 +65,12 @@ function acceptInto(target: Map<WalletId, WalletOption>, seenUuids: Map<string, 
   const knownUuid = seenUuids.get(uuid);
   const knownIdentity = seenIdentities.get(provider as object);
   const current = target.get(id);
-  if ((knownUuid && knownUuid !== provider) || (knownIdentity && knownIdentity !== id) || (current && current.provider !== provider && !current.legacy)) return;
+  if ((knownUuid && knownUuid !== provider) || (current && current.provider !== provider && !current.legacy)) return;
+  if (knownIdentity && knownIdentity !== id) {
+    const prior = target.get(knownIdentity);
+    if (legacy || prior?.provider !== provider || !prior.legacy) return;
+    target.delete(knownIdentity);
+  }
   const item = catalog.find((entry) => entry.id === id)!;
   seenUuids.set(uuid, provider);
   seenIdentities.set(provider as object, id);
@@ -73,18 +78,18 @@ function acceptInto(target: Map<WalletId, WalletOption>, seenUuids: Map<string, 
   return current;
 }
 function accept(id: WalletId, provider: Provider, uuid: string, legacy = false) {
+  const selectedWasReclassified = state.selected?.provider === provider && state.selected.id !== id;
   const current = acceptInto(options, uuids, identities, id, provider, uuid, legacy);
   if (!current && !options.has(id)) return;
   const replacingSelected = current && current.provider !== provider && current.legacy && state.selected?.id === id && state.selected.provider === current.provider;
   publish();
-  if (replacingSelected) { detach?.(); detach = undefined; update({ phase: "DISCONNECTED", providers: providerSnapshot }); }
+  if (replacingSelected || selectedWasReclassified) { detach?.(); detach = undefined; update({ phase: "DISCONNECTED", providers: providerSnapshot }); }
 }
 function announcement(event: Event) {
   const detail = (event as CustomEvent).detail as { info?: { uuid?: unknown; rdns?: unknown }; provider?: unknown } | undefined;
   if (!detail || typeof detail.info?.uuid !== "string" || typeof detail.info.rdns !== "string" || !validProvider(detail.provider)) return;
   const item = catalog.find(({ rdns }) => rdns.includes(detail.info!.rdns!.toString().toLowerCase() as never));
-  const advertisesIdentity = detail.provider.isMetaMask === true || detail.provider.isOkxWallet === true || detail.provider.isOKExWallet === true || detail.provider.isRabby === true;
-  if (item && (!advertisesIdentity || identity(detail.provider) === item.id)) accept(item.id, detail.provider, detail.info.uuid);
+  if (item) accept(item.id, detail.provider, detail.info.uuid);
 }
 export function startDiscovery() {
   if (discoveryStarted || typeof window === "undefined") return;
@@ -92,17 +97,18 @@ export function startDiscovery() {
   window.addEventListener("eip6963:announceProvider", announcement);
   window.dispatchEvent(new Event("eip6963:requestProvider"));
   queueMicrotask(() => {
-    const candidates = [...(window.ethereum?.providers ?? []), window.ethereum, window.okxwallet].filter(validProvider);
+    const candidates = [...(window.ethereum?.providers ?? []), window.ethereum].filter(validProvider);
     for (const provider of new Set(candidates)) {
       const id = identity(provider);
       if (id && !options.has(id)) accept(id, provider, `legacy-${id}`, true);
     }
+    if (validProvider(window.okxwallet)) accept("okx", window.okxwallet, "legacy-okxwallet", true);
   });
 }
 export function providerOptions() { return providerSnapshot; }
 export function providerCardinality(options: readonly WalletOption[] = providerSnapshot) { return options.length; }
 export type ProviderAnnouncement = { provider: Provider; uuid: string; rdns: string };
-export function resolveProviderOptions(legacyCandidates: readonly Provider[], announcements: readonly ProviderAnnouncement[] = []) {
+export function resolveProviderOptions(legacyCandidates: readonly Provider[], announcements: readonly ProviderAnnouncement[] = [], okxProvider?: Provider) {
   const resolved = new Map<WalletId, WalletOption>();
   const seenUuids = new Map<string, Provider>();
   const seenIdentities = new WeakMap<object, WalletId>();
@@ -112,9 +118,9 @@ export function resolveProviderOptions(legacyCandidates: readonly Provider[], an
   }
   for (const announcement of announcements) {
     const item = catalog.find(({ rdns }) => rdns.includes(announcement.rdns.toLowerCase() as never));
-    const advertisesIdentity = announcement.provider.isMetaMask === true || announcement.provider.isOkxWallet === true || announcement.provider.isOKExWallet === true || announcement.provider.isRabby === true;
-    if (item && (!advertisesIdentity || identity(announcement.provider) === item.id)) acceptInto(resolved, seenUuids, seenIdentities, item.id, announcement.provider, announcement.uuid);
+    if (item) acceptInto(resolved, seenUuids, seenIdentities, item.id, announcement.provider, announcement.uuid);
   }
+  if (validProvider(okxProvider)) acceptInto(resolved, seenUuids, seenIdentities, "okx", okxProvider, "legacy-okxwallet", true);
   return Object.freeze(catalog.flatMap(({ id }) => resolved.get(id) ? [resolved.get(id)!] : []));
 }
 export function useProviders() {

@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { deduped, rpcMetrics } from "../src/rpc";
 import { loadJournal, reserve, updateRecord } from "../src/journal";
 import { assertSuccessful, chain, explorerUrl, readClient, terminal, walletChain } from "../src/contract";
-import { createConcurrencyGate, executeWrite, transportJson, type Progress } from "../src/transaction";
+import { classifyTransaction, createConcurrencyGate, executeWrite, transportJson, type Progress } from "../src/transaction";
 import { providerCardinality, providerOptions, resolveProviderOptions, startDiscovery, wallet, walletHeaderAction, type Provider, type WalletOption } from "../src/wallet";
-import { WalletAction } from "../src/App";
+import { reviewDraftError, reviewerAddressError, retryAvailable, rubricDraftError, WalletAction } from "../src/App";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -76,7 +76,7 @@ it("discovers exact unique providers, rejects ambiguity, and replaces legacy ide
   expect(wallet.snapshot().phase).toBe("DISCONNECTED");
   expect(wallet.snapshot().writeClient).toBeUndefined();
   const ambiguous = new ProviderMock(); Object.assign(ambiguous, { isMetaMask: true, isRabby: true });
-  fakeWindow.dispatchEvent({ type: "eip6963:announceProvider", detail: { info: { uuid: "ambiguous", rdns: "io.rabby" }, provider: ambiguous } });
+  expect(resolveProviderOptions([ambiguous])).toHaveLength(0);
   const unsupported = new ProviderMock();
   fakeWindow.dispatchEvent({ type: "eip6963:announceProvider", detail: { info: { uuid: "unsupported", rdns: "com.unknown.wallet" }, provider: unsupported } });
   const okx = new ProviderMock(); Object.assign(okx, { isOkxWallet: true });
@@ -108,6 +108,37 @@ it("covers zero, single, every two-wallet combination, and all provider cardinal
   expect(resolveProviderOptions([providers[0], providers[2]]).map(({ id }) => id)).toEqual(["metamask", "rabby"]);
   expect(resolveProviderOptions([providers[1], providers[2]]).map(({ id }) => id)).toEqual(["okx", "rabby"]);
   expect(resolveProviderOptions(providers).every(({ provider }) => typeof provider.request === "function")).toBe(true);
+});
+
+it("uses EIP-6963 rdns to identify OKX despite its MetaMask compatibility flag", () => {
+  const okx = Object.assign(new ProviderMock(), { isMetaMask: true });
+  expect(resolveProviderOptions([], [{ provider: okx, uuid: "okx-modern", rdns: "com.okx.wallet" }])).toEqual([
+    expect.objectContaining({ id: "okx", name: "OKX Wallet", provider: okx, legacy: false }),
+  ]);
+  expect(resolveProviderOptions([okx], [{ provider: okx, uuid: "okx-late", rdns: "com.okex.wallet" }]).map(({ id }) => id)).toEqual(["okx"]);
+});
+
+it("uses the dedicated OKX namespace instead of its MetaMask compatibility flag", () => {
+  const okx = Object.assign(new ProviderMock(), { isMetaMask: true });
+  expect(resolveProviderOptions([], [], okx)).toEqual([expect.objectContaining({ id: "okx", provider: okx })]);
+});
+
+it("fails invalid rubric and review drafts before a wallet transaction", () => {
+  const owner = `0x${"1".repeat(40)}`;
+  expect(reviewerAddressError("bad", owner)).toMatch(/valid non-zero/i);
+  expect(reviewerAddressError(owner.toUpperCase().replace("0X", "0x"), owner)).toMatch(/different/i);
+  expect(rubricDraftError([{ id: "Bad ID", min: 0, max: 2, anchors: { 0: "a", 1: "b", 2: "c" } }])).toMatch(/dimension ID/i);
+  expect(rubricDraftError([{ id: "clarity", min: 0, max: 2, anchors: { 0: "a", 1: "", 2: "c" } }])).toMatch(/Anchor 1/i);
+  expect(rubricDraftError([{ id: "clarity", min: 0, max: 2, anchors: { 0: "a", 1: "b", 2: "c" } }])).toBeUndefined();
+  expect(reviewDraftError([{ id: "clarity" }], {})).toMatch(/Rationale/i);
+  expect(reviewDraftError([{ id: "clarity" }], { clarity: { score: 2, rationale: "Evidence matches the selected anchor." } })).toBeUndefined();
+});
+
+it("enforces the on-chain retry cap and cooldown before enabling retry", () => {
+  expect(retryAvailable({ phase: "UNRESOLVED", accepted_attempts: 1, last_accepted_at: "100" }, 159)).toBe(false);
+  expect(retryAvailable({ phase: "UNRESOLVED", accepted_attempts: 1, last_accepted_at: "100" }, 160)).toBe(true);
+  expect(retryAvailable({ phase: "UNRESOLVED", accepted_attempts: 3, last_accepted_at: "100" }, 999)).toBe(false);
+  expect(retryAvailable({ phase: "DONE", accepted_attempts: 1, last_accepted_at: "100" }, 999)).toBe(false);
 });
 
 it("renders exactly one wallet action and never Connect wallet while connected", () => {
@@ -241,6 +272,9 @@ describe("transaction classifier", () => {
     expect(() => assertSuccessful({ statusName: "FINALIZED", txExecutionResultName: "FINISHED_WITH_ERROR" })).toThrow(/did not execute/i);
     expect(() => assertSuccessful({ statusName: "ACCEPTED", txExecutionResultName: "FINISHED_WITH_RETURN" })).toThrow(/not finalized/i);
     expect(() => assertSuccessful({ statusName: "FINALIZED", consensus_data: { leader_receipt: { execution_result: "SUCCESS", result: { status: "return" } } } })).not.toThrow();
+    expect(classifyTransaction({ statusName: "ACCEPTED" }).state).toBe("PENDING");
+    expect(classifyTransaction({ statusName: "FINALIZED", txExecutionResultName: "FINISHED_WITH_RETURN" }).state).toBe("SUCCESS");
+    expect(classifyTransaction({ statusName: "FINALIZED", txExecutionResultName: "FINISHED_WITH_ERROR" })).toMatchObject({ state: "FAILED" });
   });
 });
 

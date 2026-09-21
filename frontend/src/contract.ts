@@ -23,7 +23,7 @@ export type CaseRecord = {
   id: string; primary: Address; secondary: Address; phase: string; revision: string; parent: string;
   base: { dimensions: { id: string; min: number; max: number; anchors: { score: number; text: string }[] }[] };
   response: { reviews?: { dimension_id: string; score: number; rationale: string }[] };
-  outcome: string; result: { labels?: string[] }; accepted_attempts: number;
+  outcome: string; result: { labels?: string[] }; accepted_attempts: number; last_accepted_at: string;
   last_operation: { method: string; caller: Address; args_hash: string };
 };
 export async function readCase(id: string): Promise<CaseRecord | null> {

@@ -5,6 +5,11 @@ import { invalidateRpc } from "./rpc";
 
 export type Phase = "IDLE" | "WAITING_FOR_WALLET" | "SUBMITTED" | "WAITING_FOR_FINALITY" | "VERIFYING_EXECUTION" | "VERIFYING_READBACK" | "SUCCESS" | "REJECTED" | "FAILED" | "RECONCILIATION_REQUIRED";
 export type Progress = { phase: Phase; hash?: string; message?: string };
+export function classifyTransaction(transaction: unknown): { state: "PENDING" | "SUCCESS" | "FAILED"; message?: string } {
+  if (!terminal(transaction)) return { state: "PENDING" };
+  try { assertSuccessful(transaction); return { state: "SUCCESS" }; }
+  catch (cause) { return { state: "FAILED", message: cause instanceof Error ? cause.message : "Execution failed." }; }
+}
 const wait = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
   if (signal?.aborted) { reject(new DOMException("Operation cancelled.", "AbortError")); return; }
   const aborted = () => { clearTimeout(timer); reject(new DOMException("Operation cancelled.", "AbortError")); };
@@ -52,10 +57,10 @@ export async function executeWrite(input: {
       transaction = await readClient.getTransaction({ hash: hash as never });
       if (terminal(transaction)) break;
     }
-    if (!terminal(transaction)) { await updateRecord(record.reservation, { status: "RECONCILE" }); input.progress({ phase: "RECONCILIATION_REQUIRED", hash }); return; }
+    const result = classifyTransaction(transaction);
+    if (result.state === "PENDING") { await updateRecord(record.reservation, { status: "RECONCILE" }); input.progress({ phase: "RECONCILIATION_REQUIRED", hash }); return; }
     input.progress({ phase: "VERIFYING_EXECUTION", hash });
-    try { assertSuccessful(transaction); }
-    catch (cause) { await updateRecord(record.reservation, { status: "FINALIZED_ERROR" }); input.progress({ phase: "FAILED", hash, message: cause instanceof Error ? cause.message : "Execution failed." }); return; }
+    if (result.state === "FAILED") { await updateRecord(record.reservation, { status: "FINALIZED_ERROR" }); input.progress({ phase: "FAILED", hash, message: result.message }); return; }
     input.signal?.throwIfAborted();
     input.progress({ phase: "VERIFYING_READBACK", hash });
     await input.verify({ ...record, tx_hash: hash, status: "SUBMITTED" });

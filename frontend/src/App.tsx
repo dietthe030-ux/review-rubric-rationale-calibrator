@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { assertSuccessful, contractAddress, chain, chainHex, explorerUrl, readCase, readClient, readVersion, terminal, walletChain, type CaseRecord } from "./contract";
+import { contractAddress, chain, chainHex, explorerUrl, readCase, readClient, readVersion, walletChain, type CaseRecord } from "./contract";
 import { loadJournal, updateRecord, type JournalRecord } from "./journal";
 import { deduped } from "./rpc";
-import { createConcurrencyGate, executeWrite, type Progress } from "./transaction";
+import { classifyTransaction, createConcurrencyGate, executeWrite, type Progress } from "./transaction";
 import { useProviders, useWallet, wallet, walletHeaderAction, type WalletOption } from "./wallet";
 
 const blank: Progress = { phase: "IDLE" };
@@ -32,8 +32,44 @@ function normalizedArgs(method: string, args: unknown[]) {
           : value
   );
 }
-type DimensionDraft = { id: string; min: number; max: number; anchors: Record<number, string> };
+export type DimensionDraft = { id: string; min: number; max: number; anchors: Record<number, string> };
 const initialDimensions: DimensionDraft[] = [{ id: "clarity", min: 0, max: 2, anchors: { 0: "Unclear", 1: "Partly clear", 2: "Clear and specific" } }];
+const addressPattern = /^0x[0-9a-fA-F]{40}$/;
+const zeroAddress = `0x${"0".repeat(40)}`;
+const byteLength = (value: string) => new TextEncoder().encode(value).length;
+const sameAddress = (left?: string, right?: string) => Boolean(left && right && left.toLowerCase() === right.toLowerCase());
+
+export function reviewerAddressError(reviewer: string, owner?: string): string | undefined {
+  if (!addressPattern.test(reviewer) || reviewer.toLowerCase() === zeroAddress) return "Enter a valid non-zero reviewer address.";
+  if (sameAddress(reviewer, owner)) return "Owner and reviewer must use two different wallet accounts.";
+}
+
+export function rubricDraftError(dimensions: readonly DimensionDraft[]): string | undefined {
+  if (dimensions.length < 1 || dimensions.length > 4) return "Define between 1 and 4 rubric dimensions.";
+  const ids = new Set<string>();
+  for (const item of dimensions) {
+    if (!/^[a-z][a-z0-9_]{0,15}$/.test(item.id)) return "Each dimension ID must start with a lowercase letter and use at most 16 lowercase letters, digits, or underscores.";
+    if (ids.has(item.id)) return `Dimension ID “${item.id}” is duplicated.`;
+    ids.add(item.id);
+    if (!Number.isInteger(item.min) || !Number.isInteger(item.max) || item.min < -100 || item.max > 100 || item.max < item.min || item.max - item.min > 10)
+      return `Dimension “${item.id}” needs integer bounds from -100 to 100 with a span of at most 10.`;
+    for (let score = item.min; score <= item.max; score += 1) {
+      const anchor = item.anchors[score] ?? "";
+      if (!anchor.trim() || byteLength(anchor) > 96) return `Anchor ${score} in “${item.id}” must contain 1 to 96 UTF-8 bytes.`;
+    }
+  }
+}
+
+export function reviewDraftError(dimensions: readonly { id: string }[], reviews: Record<string, { score: number; rationale: string }>): string | undefined {
+  for (const item of dimensions) {
+    const rationale = reviews[item.id]?.rationale ?? "";
+    if (!rationale.trim() || byteLength(rationale) > 768) return `Rationale for “${item.id}” must contain 1 to 768 UTF-8 bytes.`;
+  }
+}
+
+export function retryAvailable(record: Pick<CaseRecord, "phase" | "accepted_attempts" | "last_accepted_at">, nowSeconds = Math.floor(Date.now() / 1000)): boolean {
+  return record.phase === "UNRESOLVED" && record.accepted_attempts < 3 && nowSeconds >= Number(record.last_accepted_at) + 60;
+}
 
 export function WalletAction({ phase, name, account, onDisconnect, onSwitch, onConnect }: { phase: "CONNECTED" | "WRONG_CHAIN" | "CONNECT"; name?: string; account?: string; onDisconnect: () => void; onSwitch: () => void; onConnect: () => void }) {
   if (phase === "CONNECTED") return <button className="wallet-button connected" onClick={onDisconnect} title={`Connected as ${account}`}><span className="wallet-name-badge">{name}</span><span className="account-address">{account?.slice(0, 6)}…{account?.slice(-4)}</span><span className="disconnect-affordance">Disconnect</span></button>;
@@ -115,6 +151,7 @@ export function App() {
   const [error, setError] = useState(initialJournal.error);
   const [journal, setJournal] = useState<JournalRecord[]>(initialJournal.records);
   const [visible, setVisible] = useState(document.visibilityState !== "hidden");
+  const [nowSeconds, setNowSeconds] = useState(() => Math.floor(Date.now() / 1000));
   const dialog = useRef<HTMLDialogElement>(null);
   const operation = useRef(new AbortController());
   const reconciliations = useRef(createConcurrencyGate(2));
@@ -127,6 +164,7 @@ export function App() {
     operation.current.abort();
     operation.current = new AbortController();
     if (!visible || session.phase !== "CONNECTED") operation.current.abort();
+    setProgress((current) => ["SUCCESS", "FAILED", "REJECTED"].includes(current.phase) ? blank : current);
     return () => operation.current.abort();
   }, [visible, session.phase, session.account, session.selected]);
   useEffect(() => {
@@ -138,6 +176,13 @@ export function App() {
     document.addEventListener("visibilitychange", change);
     return () => { document.removeEventListener("visibilitychange", change); operation.current.abort(); };
   }, []);
+  useEffect(() => {
+    if (record?.phase !== "UNRESOLVED") return;
+    const remaining = Number(record.last_accepted_at) + 60 - Math.floor(Date.now() / 1000);
+    if (remaining <= 0) { setNowSeconds(Math.floor(Date.now() / 1000)); return; }
+    const timer = window.setTimeout(() => setNowSeconds(Math.floor(Date.now() / 1000)), remaining * 1000 + 50);
+    return () => window.clearTimeout(timer);
+  }, [record?.phase, record?.last_accepted_at]);
 
   const connected = session.phase === "CONNECTED" && session.account && session.selected && session.writeClient;
   const canWrite = Boolean(
@@ -150,7 +195,7 @@ export function App() {
   );
 
   const role = useMemo(
-    () => (!record || !session.account ? "reader" : record.primary === session.account ? "owner" : record.secondary === session.account ? "reviewer" : "evaluator"),
+    () => (!record || !session.account ? "reader" : sameAddress(record.primary, session.account) ? "owner" : sameAddress(record.secondary, session.account) ? "reviewer" : "evaluator"),
     [record, session.account]
   );
 
@@ -194,10 +239,12 @@ export function App() {
 
   async function load() {
     setError("");
+    if (!/^[1-9]\d*$/.test(caseId)) { setError("Enter a positive integer case ID."); return; }
     try {
       const next = await deduped("detail", `${chain.id}:${contractAddress}:get_case:${caseId}`, () => readCase(caseId));
       next ? showRecord(next) : setRecord(null);
     } catch (cause) {
+      setRecord(null);
       setError(cause instanceof Error ? cause.message : "Read failed.");
     }
   }
@@ -223,12 +270,12 @@ export function App() {
         submit: () => client.writeContract({ address, functionName: method, args: args as never[], value: 0n }),
         progress: setProgress,
         verify: async () => {
-          const id = method === "create_rubric" ? String(await client.readContract({ address, functionName: "get_id_by_nonce", args: [session.account!, args[0] as string] })) : caseId;
+          const id = method === "create_rubric" ? String(await readClient.readContract({ address, functionName: "get_id_by_nonce", args: [session.account!, args[0] as string] })) : caseId;
           const revision = method === "create_rubric" ? "1" : String(BigInt(preRevision) + 1n);
           const next = await readVersion(id, revision);
           if (!next) throw new Error("Expected historical revision was not found.");
           const argsHash = await hashText(canonical(normalizedArgs(method, args)));
-          if (next.last_operation.method !== method || next.last_operation.caller !== session.account || next.last_operation.args_hash !== argsHash)
+          if (next.last_operation.method !== method || !sameAddress(next.last_operation.caller, session.account) || next.last_operation.args_hash !== argsHash)
             throw new Error("Authoritative operation readback mismatch.");
           if (expectedPhase && next.phase !== expectedPhase) throw new Error("Phase readback mismatch.");
           setCaseId(next.id);
@@ -260,11 +307,18 @@ export function App() {
       signal.throwIfAborted();
       const transaction = await readClient.getTransaction({ hash: item.tx_hash as never });
       signal.throwIfAborted();
-      if (!terminal(transaction)) {
+      const result = classifyTransaction(transaction);
+      if (result.state === "PENDING") {
         setProgress({ phase: "RECONCILIATION_REQUIRED", hash: item.tx_hash, message: "The exact transaction is not finalized yet." });
         return;
       }
-      assertSuccessful(transaction);
+      if (result.state === "FAILED") {
+        await updateRecord(item.reservation, { status: "FINALIZED_ERROR" });
+        setProgress({ phase: "FAILED", hash: item.tx_hash, message: result.message });
+        setError(result.message ?? "The finalized transaction did not execute successfully.");
+        setJournal(loadJournal());
+        return;
+      }
       setProgress({ phase: "VERIFYING_READBACK", hash: item.tx_hash });
       const args = JSON.parse(item.args_json) as unknown[];
       const id =
@@ -274,7 +328,7 @@ export function App() {
       const revision = item.method === "create_rubric" ? "1" : String(BigInt(item.pre_revision) + 1n);
       const next = await readVersion(id, revision);
       signal.throwIfAborted();
-      if (!next || next.last_operation.method !== item.method || next.last_operation.caller !== item.account || next.last_operation.args_hash !== (await hashText(canonical(normalizedArgs(item.method, args)))))
+      if (!next || next.last_operation.method !== item.method || !sameAddress(next.last_operation.caller, item.account) || next.last_operation.args_hash !== (await hashText(canonical(normalizedArgs(item.method, args)))))
         throw new Error("Authoritative historical readback mismatch.");
       await updateRecord(item.reservation, { status: "VERIFIED" });
       showRecord(next);
@@ -289,12 +343,27 @@ export function App() {
   }
 
   function create() {
+    const issue = reviewerAddressError(reviewer, session.account) ?? rubricDraftError(dimensions);
+    if (issue) { setError(issue); return; }
     const nonce = crypto.getRandomValues(new Uint8Array(16)).reduce((s, v) => s + v.toString(16).padStart(2, "0"), "");
     return write("create_rubric", [nonce, reviewer, rubric, 0n], `create:${session.account}:${nonce}`);
   }
 
+  function replaceRubric() {
+    const issue = rubricDraftError(dimensions);
+    if (issue) { setError(issue); return; }
+    return write("replace_rubric", [BigInt(caseId), rubric, BigInt(record!.revision)], `replace_rubric:${caseId}:${record!.revision}`, "BASE_DRAFT");
+  }
+
+  function saveReview() {
+    const issue = reviewDraftError(record!.base.dimensions, reviews);
+    if (issue) { setError(issue); return; }
+    return write("put_review", [BigInt(caseId), review, BigInt(record!.revision)], `put_review:${caseId}:${record!.revision}`, "RESPONSE_DRAFT");
+  }
+
   const active = progress.phase !== "IDLE";
   const isPending = ["WAITING_FOR_WALLET", "SUBMITTED", "WAITING_FOR_FINALITY", "VERIFYING_EXECUTION", "VERIFYING_READBACK"].includes(progress.phase);
+  const canRetry = record ? retryAvailable(record, nowSeconds) : false;
 
   return (
     <div className="instrument-shell">
@@ -368,7 +437,7 @@ export function App() {
                   id="case-id-input"
                   className="instrument-input"
                   value={caseId}
-                  onChange={(e) => setCaseId(e.target.value)}
+                  onChange={(e) => { setCaseId(e.target.value); setRecord(null); setError(""); }}
                   inputMode="numeric"
                   placeholder="1"
                 />
@@ -592,9 +661,7 @@ export function App() {
                     <button
                       className="action-button secondary"
                       disabled={!canWrite || role !== "owner" || record.phase !== "BASE_DRAFT"}
-                      onClick={() =>
-                        write("replace_rubric", [BigInt(caseId), rubric, BigInt(record.revision)], `replace_rubric:${caseId}:${record.revision}`, "BASE_DRAFT")
-                      }
+                      onClick={replaceRubric}
                     >
                       Replace rubric
                     </button>
@@ -690,9 +757,7 @@ export function App() {
                   <button
                     className="action-button secondary"
                     disabled={!canWrite || role !== "reviewer" || !["BASE_LOCKED", "RESPONSE_DRAFT"].includes(record.phase)}
-                    onClick={() =>
-                      write("put_review", [BigInt(caseId), review, BigInt(record.revision)], `put_review:${caseId}:${record.revision}`, "RESPONSE_DRAFT")
-                    }
+                    onClick={saveReview}
                   >
                     Save review
                   </button>
@@ -732,7 +797,8 @@ export function App() {
                   </button>
                   <button
                     className="action-button secondary"
-                    disabled={!canWrite || record.phase !== "UNRESOLVED"}
+                    disabled={!canWrite || !canRetry}
+                    title={record.phase === "UNRESOLVED" && !canRetry ? "Available after the 60-second on-chain cooldown." : undefined}
                     onClick={() =>
                       write("retry_review", [BigInt(caseId), BigInt(record.revision)], `retry_review:${caseId}:${record.revision}`)
                     }
@@ -837,11 +903,11 @@ export function App() {
         )}
 
         {/* Error Alert */}
-        {error && (
+        {(error || session.error) && (
           <div role="alert" className="error-banner">
             <span className="error-icon" aria-hidden="true">⚠</span>
             <div className="error-content">
-              <strong>Execution Error:</strong> {error}
+              <strong>Action needed:</strong> {error || session.error}
             </div>
           </div>
         )}
@@ -875,7 +941,7 @@ export function App() {
                     <div className="record-action-row">
                       <button
                         className="action-button secondary compact"
-                        disabled={item.chain !== String(chain.id) || item.contract !== contractAddress || item.account !== session.account}
+                        disabled={item.chain !== String(chain.id) || !sameAddress(item.contract, contractAddress) || !sameAddress(item.account, session.account)}
                         onClick={() => reconcile(item)}
                       >
                         Resume exact transaction
